@@ -8,7 +8,7 @@ Event handlers for Sales Invoice document events
 
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import cint, flt
 
 
 def validate(doc, method=None):
@@ -23,6 +23,7 @@ def validate(doc, method=None):
 	"""
 	apply_tax_inclusive(doc)
 	auto_assign_loyalty_program_on_invoice(doc)
+	validate_payment_permissions(doc)
 
 
 def apply_tax_inclusive(doc):
@@ -141,3 +142,55 @@ def before_cancel(doc, method=None):
 			alert=True,
 			indicator="orange"
 		)
+
+
+def validate_payment_permissions(doc):
+	"""
+	Validate if the cashier has permission to sell at credit or partial payment
+	based on their POS Settings.
+	"""
+	if not doc.is_pos or not doc.pos_profile or doc.is_return:
+		return
+
+	# Only check for Sales Invoice
+	if doc.doctype != "Sales Invoice":
+		return
+
+	# Get POS Settings for this profile
+	pos_settings = frappe.db.get_value(
+		"POS Settings",
+		{"pos_profile": doc.pos_profile},
+		["allow_credit_sale", "allow_partial_payment", "allow_customer_credit_payment"],
+		as_dict=True
+	)
+
+	if not pos_settings:
+		return
+
+	allow_credit_sale = cint(pos_settings.get("allow_credit_sale"))
+	allow_partial_payment = cint(pos_settings.get("allow_partial_payment"))
+	allow_customer_credit_payment = cint(pos_settings.get("allow_customer_credit_payment"))
+
+	# Calculate paid amount from payment entries
+	paid_amount = flt(sum(flt(p.amount) for p in doc.get("payments", [])))
+	grand_total = flt(doc.grand_total)
+
+	# Check for Customer Credit redemption flag
+	has_customer_credit = getattr(doc.flags, "pos_next_redeemed_customer_credit", 0) or getattr(doc, "pos_next_redeemed_customer_credit", 0)
+
+	if has_customer_credit:
+		if not allow_customer_credit_payment:
+			frappe.throw(_("Customer credit payment is not allowed for this POS Profile."))
+		return
+
+	# Full Credit Sale: no payments recorded, grand_total > 0
+	if paid_amount == 0 and grand_total > 0:
+		if not allow_credit_sale:
+			frappe.throw(_("Credit sale is not allowed for this POS Profile."))
+
+	# Partial Payment: 0 < paid_amount < grand_total
+	elif 0 < paid_amount < grand_total:
+		# Allow a small threshold for floating point comparisons (e.g. 0.01)
+		if grand_total - paid_amount > 0.01:
+			if not allow_partial_payment:
+				frappe.throw(_("Partial payment is not allowed for this POS Profile."))
