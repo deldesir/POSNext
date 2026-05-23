@@ -314,7 +314,8 @@ export async function printInvoice(invoiceData, printFormat = null, letterhead =
 		})
 		if (letterhead) params.append("letterhead", letterhead)
 
-		const printWindow = window.open(`/printview?${params}`, "_blank", "width=800,height=600")
+		const subpath = (window.frappe && frappe.router && frappe.router._subpath_prefix) || (window.location.pathname.startsWith("/erp") ? "/erp" : "")
+		const printWindow = window.open(`${subpath}/printview?${params}`, "_blank", "width=800,height=600")
 		if (!printWindow) {
 			throw new Error("Popup blocked — check your browser settings.")
 		}
