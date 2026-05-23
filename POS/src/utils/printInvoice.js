@@ -39,8 +39,22 @@ export async function printInvoice(
 		}
 
 		// Open PDF in new window - browser will handle print dialog
-		const hasErpSubpath = Array.from(document.scripts).some(s => s.src && s.src.includes("/erp/assets/"))
-		const subpath = (window.frappe && frappe.router && frappe.router._subpath_prefix) || (hasErpSubpath ? "/erp" : "")
+		// Determine subpath dynamically, robustly and idempotently
+		let subpath = "";
+		if (window.frappe && frappe.router && frappe.router._subpath_prefix) {
+			subpath = frappe.router._subpath_prefix;
+		} else if (window.location.pathname.startsWith("/erp")) {
+			subpath = "/erp";
+		} else if (Array.from(document.scripts).some(s => s.src && s.src.includes("/erp/assets/"))) {
+			subpath = "/erp";
+		}
+
+		// Normalize subpath to ensure no trailing slash or duplicate slashes
+		subpath = subpath.trim().replace(/\/+$/, "");
+		if (subpath && !subpath.startsWith("/")) {
+			subpath = "/" + subpath;
+		}
+
 		const printUrl = `${subpath}/printview?${params.toString()}`
 		const printWindow = window.open(printUrl, "_blank", "width=800,height=600")
 
