@@ -1299,7 +1299,6 @@ const paymentMethodsResource = createResource({
 		if (paymentMethods.value.length > 0) {
 			const defaultMethod = paymentMethods.value.find((m) => m.default)
 			lastSelectedMethod.value = defaultMethod || paymentMethods.value[0]
-			autoFillDefaultPayment()
 		}
 		// Identify wallet payment methods
 		identifyWalletPaymentMethods()
@@ -1681,7 +1680,6 @@ async function loadPaymentMethods() {
 				if (paymentMethods.value.length > 0) {
 					const defaultMethod = paymentMethods.value.find((m) => m.default)
 					lastSelectedMethod.value = defaultMethod || paymentMethods.value[0]
-					autoFillDefaultPayment()
 				}
 			}
 		} else {
@@ -2018,16 +2016,6 @@ watch(
 	{ immediate: true },
 )
 
-function autoFillDefaultPayment() {
-	if (props.modelValue && paymentEntries.value.length === 0 && paymentMethods.value.length > 0) {
-		const defaultMethod = paymentMethods.value.find((m) => m.default) || paymentMethods.value[0]
-		if (defaultMethod) {
-			_upsertPaymentEntry(defaultMethod, props.grandTotal)
-			log.debug("[PaymentDialog] Auto-filled default payment entry:", defaultMethod.mode_of_payment, props.grandTotal)
-		}
-	}
-}
-
 watch(show, (newVal) => {
 	if (newVal) {
 		// Reset state when dialog opens (but NOT customerBalance - it's pre-fetched)
@@ -2066,12 +2054,9 @@ watch(show, (newVal) => {
 		})
 
 		// Set default payment method if already loaded
-		if (paymentMethods.value.length > 0) {
+		if (paymentMethods.value.length > 0 && !lastSelectedMethod.value) {
 			const defaultMethod = paymentMethods.value.find((m) => m.default)
-			if (!lastSelectedMethod.value) {
-				lastSelectedMethod.value = defaultMethod || paymentMethods.value[0]
-			}
-			autoFillDefaultPayment()
+			lastSelectedMethod.value = defaultMethod || paymentMethods.value[0]
 		}
 
 		if (creditEnabled) {
