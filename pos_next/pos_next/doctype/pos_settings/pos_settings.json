@@ -15,6 +15,7 @@
   "column_break_wallet",
   "auto_create_wallet",
   "loyalty_to_wallet",
+  "invoice_type",
   "section_break_general",
   "allow_user_to_edit_additional_discount",
   "allow_user_to_edit_item_discount",
@@ -155,6 +156,14 @@
    "fieldtype": "Check",
    "label": "Convert Loyalty Points to Wallet",
    "read_only_depends_on": "enable_loyalty_program"
+  },
+  {
+   "default": "Sales Invoice",
+   "description": "The system will create a Sales Invoice or a POS Invoice from the POS interface based on this setting. For high-volume transactions, it is recommended to use POS Invoice.",
+   "fieldname": "invoice_type",
+   "fieldtype": "Select",
+   "label": "Invoice Type Created via POS Screen",
+   "options": "Sales Invoice\nPOS Invoice"
   },
   {
    "fieldname": "section_break_general",
