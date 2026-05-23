@@ -39,7 +39,8 @@ export async function printInvoice(
 		}
 
 		// Open PDF in new window - browser will handle print dialog
-		const printUrl = `/printview?${params.toString()}`
+		const subpath = (window.frappe && frappe.router && frappe.router._subpath_prefix) || ""
+		const printUrl = `${subpath}/printview?${params.toString()}`
 		const printWindow = window.open(printUrl, "_blank", "width=800,height=600")
 
 		if (!printWindow) {
