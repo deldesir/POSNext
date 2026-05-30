@@ -77,12 +77,13 @@
                   </label>
                 </div>
                 <div class="w-32">
-                  <Input
-                    v-model="openingBalances[method.mode_of_payment]"
+                  <input
+                    v-model.number="openingBalances[method.mode_of_payment]"
                     type="number"
                     placeholder="0.00"
                     step="0.01"
                     min="0"
+                    class="w-full h-10 px-3 border border-gray-300 rounded-lg text-end font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                   />
                 </div>
               </div>

@@ -244,17 +244,17 @@
 
                     <!-- Simple Input with Native Arrows -->
                     <div class="w-40 md:w-48">
-                      <Input
+                      <input
                         :id="`payment-${idx}`"
-                        :modelValue="payment.closing_amount"
-                        @update:modelValue="(value) => updateClosingAmount(payment, value)"
+                        :value="payment.closing_amount"
+                        @input="(e) => updateClosingAmount(payment, e.target.value)"
                         type="number"
                         step="10"
                         min="0"
                         placeholder="0.00"
                         :disabled="submitResource.loading"
                         :aria-label="__('Enter actual amount for {0}', [payment.mode_of_payment])"
-                        class="text-base md:text-lg text-center font-semibold"
+                        class="w-full h-10 border border-gray-300 rounded-lg text-center font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-base md:text-lg"
                       />
                     </div>
                   </div>
@@ -333,16 +333,16 @@
                       <label class="block text-xs font-medium text-gray-700 uppercase mb-0.5 md:mb-1">
                         {{ __('Actual Amount *') }}
                       </label>
-                      <Input
-                        :modelValue="payment.closing_amount"
-                        @update:modelValue="(value) => updateClosingAmount(payment, value)"
+                      <input
+                        :value="payment.closing_amount"
+                        @input="(e) => updateClosingAmount(payment, e.target.value)"
                         type="number"
                         step="0.01"
                         min="0"
                         placeholder="0.00"
                         :disabled="showSuccessReport || submitResource.loading"
                         :aria-label="`Enter actual amount for ${payment.mode_of_payment}`"
-                        class="text-base md:text-lg"
+                        class="w-full h-10 px-3 border border-gray-300 rounded-lg text-end font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-base md:text-lg"
                       />
                       <div class="text-xs text-gray-500 mt-0.5 md:mt-1 hidden sm:block">
                         {{ showSuccessReport ? __('Final Amount') : __('Count & enter') }}
