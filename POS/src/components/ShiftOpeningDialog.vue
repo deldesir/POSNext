@@ -222,17 +222,6 @@ const showClosingDialog = ref(false)
 const closingExistingShift = ref(false)
 const restartProfileName = ref(null)
 
-// Watch payment methods to pre-initialize keys in openingBalances ref to ensure reactivity
-watch(paymentMethods, (methods) => {
-	if (methods) {
-		methods.forEach((method) => {
-			if (openingBalances.value[method.mode_of_payment] === undefined) {
-				openingBalances.value[method.mode_of_payment] = ""
-			}
-		})
-	}
-}, { deep: true, immediate: true })
-
 // Get POS Profiles
 const profilesResource = createResource({
 	url: "pos_next.api.pos_profile.get_pos_profiles",
@@ -256,6 +245,17 @@ const paymentMethods = computed(() => {
 		(method) => method.parent === selectedProfile.value.name,
 	)
 })
+
+// Watch payment methods to pre-initialize keys in openingBalances ref to ensure reactivity
+watch(paymentMethods, (methods) => {
+	if (methods) {
+		methods.forEach((method) => {
+			if (openingBalances.value[method.mode_of_payment] === undefined) {
+				openingBalances.value[method.mode_of_payment] = ""
+			}
+		})
+	}
+}, { deep: true, immediate: true })
 
 // Watch dialog open state
 // Use { immediate: true } to ensure initDialog runs even when
