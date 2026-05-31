@@ -244,16 +244,17 @@
 
                     <!-- Simple Input with Native Arrows -->
                     <div class="w-40 md:w-48">
-                      <input
+                      <Input
                         :id="`payment-${idx}`"
-                        :value="payment.closing_amount"
-                        @input="e => handleNumericInput(e, payment, 'closing_amount', () => handleClosingAmountInput(payment))"
-                        type="text"
-                        inputmode="decimal"
+                        :modelValue="payment.closing_amount"
+                        @update:modelValue="(value) => updateClosingAmount(payment, value)"
+                        type="number"
+                        step="10"
+                        min="0"
                         placeholder="0.00"
                         :disabled="submitResource.loading"
                         :aria-label="__('Enter actual amount for {0}', [payment.mode_of_payment])"
-                        class="w-full h-10 border border-gray-300 rounded-lg text-center font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-base md:text-lg"
+                        class="text-base md:text-lg text-center font-semibold"
                       />
                     </div>
                   </div>
@@ -332,15 +333,16 @@
                       <label class="block text-xs font-medium text-gray-700 uppercase mb-0.5 md:mb-1">
                         {{ __('Actual Amount *') }}
                       </label>
-                      <input
-                        :value="payment.closing_amount"
-                        @input="e => handleNumericInput(e, payment, 'closing_amount', () => handleClosingAmountInput(payment))"
-                        type="text"
-                        inputmode="decimal"
+                      <Input
+                        :modelValue="payment.closing_amount"
+                        @update:modelValue="(value) => updateClosingAmount(payment, value)"
+                        type="number"
+                        step="0.01"
+                        min="0"
                         placeholder="0.00"
                         :disabled="showSuccessReport || submitResource.loading"
                         :aria-label="`Enter actual amount for ${payment.mode_of_payment}`"
-                        class="w-full h-10 px-3 border border-gray-300 rounded-lg text-end font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-base md:text-lg"
+                        class="text-base md:text-lg"
                       />
                       <div class="text-xs text-gray-500 mt-0.5 md:mt-1 hidden sm:block">
                         {{ showSuccessReport ? __('Final Amount') : __('Count & enter') }}
@@ -593,7 +595,7 @@ async function loadClosingData() {
 			data.payment_reconciliation = data.payment_reconciliation.map((payment) =>
 				reactive({
 					...payment,
-					closing_amount: payment.closing_amount ?? "",
+					closing_amount: payment.closing_amount ?? null,
 					difference: 0,
 					_touched: false,
 				}),
@@ -626,12 +628,6 @@ function calculateDifference(payment) {
 // New function to handle closing amount updates with proper reactivity
 function updateClosingAmount(payment, value) {
 	payment.closing_amount = value
-	payment._touched = true
-	calculateDifference(payment)
-}
-
-// Handle closing amount inputs reactively with native v-model integration
-function handleClosingAmountInput(payment) {
 	payment._touched = true
 	calculateDifference(payment)
 }
@@ -821,44 +817,6 @@ function getPaymentIcon(method) {
 		return { icon: "📝", color: "bg-yellow-500" }
 	} else {
 		return { icon: "💰", color: "bg-gray-500" }
-	}
-}
-
-function handleNumericInput(event, obj, key, onInputCallback) {
-	const input = event.target
-	const originalValue = input.value
-
-	// 1. Convert commas to dots
-	let sanitized = originalValue.replace(",", ".")
-
-	// 2. Allow only digits and a single dot
-	sanitized = sanitized.replace(/[^0-9.]/g, "")
-	const parts = sanitized.split(".")
-	if (parts.length > 2) {
-		sanitized = parts[0] + "." + parts.slice(1).join("")
-	}
-
-	// 3. Limit to exactly 2 decimal places
-	if (parts[1] && parts[1].length > 2) {
-		sanitized = parts[0] + "." + parts[1].slice(0, 2)
-	}
-
-	// 4. Update the target object and cursor caret position only if modified
-	if (originalValue !== sanitized) {
-		const selectionStart = input.selectionStart
-		const charDiff = originalValue.length - sanitized.length
-
-		obj[key] = sanitized
-		input.value = sanitized
-
-		const newCursorPos = Math.max(0, selectionStart - charDiff)
-		input.setSelectionRange(newCursorPos, newCursorPos)
-	} else {
-		obj[key] = sanitized
-	}
-
-	if (onInputCallback) {
-		onInputCallback()
 	}
 }
 </script>

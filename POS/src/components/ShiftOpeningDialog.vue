@@ -77,13 +77,12 @@
                   </label>
                 </div>
                 <div class="w-32">
-                  <input
-                    :value="openingBalances[method.mode_of_payment]"
-                    @input="e => handleNumericInput(e, openingBalances, method.mode_of_payment)"
-                    type="text"
-                    inputmode="decimal"
+                  <Input
+                    v-model="openingBalances[method.mode_of_payment]"
+                    type="number"
                     placeholder="0.00"
-                    class="w-full h-10 px-3 border border-gray-300 rounded-lg text-end font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                    step="0.01"
+                    min="0"
                   />
                 </div>
               </div>
@@ -246,17 +245,6 @@ const paymentMethods = computed(() => {
 	)
 })
 
-// Watch payment methods to pre-initialize keys in openingBalances ref to ensure reactivity
-watch(paymentMethods, (methods) => {
-	if (methods) {
-		methods.forEach((method) => {
-			if (openingBalances.value[method.mode_of_payment] === undefined) {
-				openingBalances.value[method.mode_of_payment] = ""
-			}
-		})
-	}
-}, { deep: true, immediate: true })
-
 // Watch dialog open state
 // Use { immediate: true } to ensure initDialog runs even when
 // the component mounts with open already true (e.g., after logout with dialog open)
@@ -391,44 +379,6 @@ async function handleExistingShiftClosed() {
 			await dialogDataResource.fetch()
 			step.value = 2
 		}
-	}
-}
-
-function handleNumericInput(event, obj, key, onInputCallback) {
-	const input = event.target
-	const originalValue = input.value
-
-	// 1. Convert commas to dots
-	let sanitized = originalValue.replace(",", ".")
-
-	// 2. Allow only digits and a single dot
-	sanitized = sanitized.replace(/[^0-9.]/g, "")
-	const parts = sanitized.split(".")
-	if (parts.length > 2) {
-		sanitized = parts[0] + "." + parts.slice(1).join("")
-	}
-
-	// 3. Limit to exactly 2 decimal places
-	if (parts[1] && parts[1].length > 2) {
-		sanitized = parts[0] + "." + parts[1].slice(0, 2)
-	}
-
-	// 4. Update the target object and cursor caret position only if modified
-	if (originalValue !== sanitized) {
-		const selectionStart = input.selectionStart
-		const charDiff = originalValue.length - sanitized.length
-
-		obj[key] = sanitized
-		input.value = sanitized
-
-		const newCursorPos = Math.max(0, selectionStart - charDiff)
-		input.setSelectionRange(newCursorPos, newCursorPos)
-	} else {
-		obj[key] = sanitized
-	}
-
-	if (onInputCallback) {
-		onInputCallback()
 	}
 }
 </script>
