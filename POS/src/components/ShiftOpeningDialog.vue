@@ -78,7 +78,7 @@
                 </div>
                 <div class="w-32">
                   <input
-                    v-model.number="openingBalances[method.mode_of_payment]"
+                    v-model="openingBalances[method.mode_of_payment]"
                     type="number"
                     placeholder="0.00"
                     step="0.01"
@@ -221,6 +221,17 @@ const existingShift = ref(null)
 const showClosingDialog = ref(false)
 const closingExistingShift = ref(false)
 const restartProfileName = ref(null)
+
+// Watch payment methods to pre-initialize keys in openingBalances ref to ensure reactivity
+watch(paymentMethods, (methods) => {
+	if (methods) {
+		methods.forEach((method) => {
+			if (openingBalances.value[method.mode_of_payment] === undefined) {
+				openingBalances.value[method.mode_of_payment] = ""
+			}
+		})
+	}
+}, { deep: true, immediate: true })
 
 // Get POS Profiles
 const profilesResource = createResource({

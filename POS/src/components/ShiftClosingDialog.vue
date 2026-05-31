@@ -246,8 +246,8 @@
                     <div class="w-40 md:w-48">
                       <input
                         :id="`payment-${idx}`"
-                        :value="payment.closing_amount"
-                        @input="(e) => updateClosingAmount(payment, e.target.value)"
+                        v-model="payment.closing_amount"
+                        @input="handleClosingAmountInput(payment)"
                         type="number"
                         step="10"
                         min="0"
@@ -334,8 +334,8 @@
                         {{ __('Actual Amount *') }}
                       </label>
                       <input
-                        :value="payment.closing_amount"
-                        @input="(e) => updateClosingAmount(payment, e.target.value)"
+                        v-model="payment.closing_amount"
+                        @input="handleClosingAmountInput(payment)"
                         type="number"
                         step="0.01"
                         min="0"
@@ -595,7 +595,7 @@ async function loadClosingData() {
 			data.payment_reconciliation = data.payment_reconciliation.map((payment) =>
 				reactive({
 					...payment,
-					closing_amount: payment.closing_amount ?? null,
+					closing_amount: payment.closing_amount ?? "",
 					difference: 0,
 					_touched: false,
 				}),
@@ -628,6 +628,12 @@ function calculateDifference(payment) {
 // New function to handle closing amount updates with proper reactivity
 function updateClosingAmount(payment, value) {
 	payment.closing_amount = value
+	payment._touched = true
+	calculateDifference(payment)
+}
+
+// Handle closing amount inputs reactively with native v-model integration
+function handleClosingAmountInput(payment) {
 	payment._touched = true
 	calculateDifference(payment)
 }
