@@ -246,11 +246,10 @@
                     <div class="w-40 md:w-48">
                       <input
                         :id="`payment-${idx}`"
-                        v-model="payment.closing_amount"
-                        @input="handleClosingAmountInput(payment)"
-                        type="number"
-                        step="10"
-                        min="0"
+                        :value="payment.closing_amount"
+                        @input="e => handleNumericInput(e, payment, 'closing_amount', () => handleClosingAmountInput(payment))"
+                        type="text"
+                        inputmode="decimal"
                         placeholder="0.00"
                         :disabled="submitResource.loading"
                         :aria-label="__('Enter actual amount for {0}', [payment.mode_of_payment])"
@@ -334,11 +333,10 @@
                         {{ __('Actual Amount *') }}
                       </label>
                       <input
-                        v-model="payment.closing_amount"
-                        @input="handleClosingAmountInput(payment)"
-                        type="number"
-                        step="0.01"
-                        min="0"
+                        :value="payment.closing_amount"
+                        @input="e => handleNumericInput(e, payment, 'closing_amount', () => handleClosingAmountInput(payment))"
+                        type="text"
+                        inputmode="decimal"
                         placeholder="0.00"
                         :disabled="showSuccessReport || submitResource.loading"
                         :aria-label="`Enter actual amount for ${payment.mode_of_payment}`"
@@ -823,6 +821,44 @@ function getPaymentIcon(method) {
 		return { icon: "📝", color: "bg-yellow-500" }
 	} else {
 		return { icon: "💰", color: "bg-gray-500" }
+	}
+}
+
+function handleNumericInput(event, obj, key, onInputCallback) {
+	const input = event.target
+	const originalValue = input.value
+
+	// 1. Convert commas to dots
+	let sanitized = originalValue.replace(",", ".")
+
+	// 2. Allow only digits and a single dot
+	sanitized = sanitized.replace(/[^0-9.]/g, "")
+	const parts = sanitized.split(".")
+	if (parts.length > 2) {
+		sanitized = parts[0] + "." + parts.slice(1).join("")
+	}
+
+	// 3. Limit to exactly 2 decimal places
+	if (parts[1] && parts[1].length > 2) {
+		sanitized = parts[0] + "." + parts[1].slice(0, 2)
+	}
+
+	// 4. Update the target object and cursor caret position only if modified
+	if (originalValue !== sanitized) {
+		const selectionStart = input.selectionStart
+		const charDiff = originalValue.length - sanitized.length
+
+		obj[key] = sanitized
+		input.value = sanitized
+
+		const newCursorPos = Math.max(0, selectionStart - charDiff)
+		input.setSelectionRange(newCursorPos, newCursorPos)
+	} else {
+		obj[key] = sanitized
+	}
+
+	if (onInputCallback) {
+		onInputCallback()
 	}
 }
 </script>

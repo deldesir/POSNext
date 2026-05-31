@@ -78,11 +78,11 @@
                 </div>
                 <div class="w-32">
                   <input
-                    v-model="openingBalances[method.mode_of_payment]"
-                    type="number"
+                    :value="openingBalances[method.mode_of_payment]"
+                    @input="e => handleNumericInput(e, openingBalances, method.mode_of_payment)"
+                    type="text"
+                    inputmode="decimal"
                     placeholder="0.00"
-                    step="0.01"
-                    min="0"
                     class="w-full h-10 px-3 border border-gray-300 rounded-lg text-end font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                   />
                 </div>
@@ -391,6 +391,44 @@ async function handleExistingShiftClosed() {
 			await dialogDataResource.fetch()
 			step.value = 2
 		}
+	}
+}
+
+function handleNumericInput(event, obj, key, onInputCallback) {
+	const input = event.target
+	const originalValue = input.value
+
+	// 1. Convert commas to dots
+	let sanitized = originalValue.replace(",", ".")
+
+	// 2. Allow only digits and a single dot
+	sanitized = sanitized.replace(/[^0-9.]/g, "")
+	const parts = sanitized.split(".")
+	if (parts.length > 2) {
+		sanitized = parts[0] + "." + parts.slice(1).join("")
+	}
+
+	// 3. Limit to exactly 2 decimal places
+	if (parts[1] && parts[1].length > 2) {
+		sanitized = parts[0] + "." + parts[1].slice(0, 2)
+	}
+
+	// 4. Update the target object and cursor caret position only if modified
+	if (originalValue !== sanitized) {
+		const selectionStart = input.selectionStart
+		const charDiff = originalValue.length - sanitized.length
+
+		obj[key] = sanitized
+		input.value = sanitized
+
+		const newCursorPos = Math.max(0, selectionStart - charDiff)
+		input.setSelectionRange(newCursorPos, newCursorPos)
+	} else {
+		obj[key] = sanitized
+	}
+
+	if (onInputCallback) {
+		onInputCallback()
 	}
 }
 </script>
