@@ -2303,7 +2303,7 @@ def prepare_return_invoice(invoice_name, pos_opening_shift=None):
 	        - _original_invoice: Reference data from original invoice (payments, amounts)
 	        - Each item includes original_qty, already_returned, and remaining_qty
 	"""
-	from erpnext.accounts.doctype.sales_invoice.sales_invoice import make_sales_return
+	from erpnext.accounts.doctype.sales_invoice.mapper import make_sales_return
 	from frappe.query_builder.functions import Abs, Coalesce, Sum
 	from frappe.utils import date_diff, getdate
 
