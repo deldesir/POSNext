@@ -23,6 +23,21 @@ def validate(doc, method=None):
 	"""
 	apply_tax_inclusive(doc)
 	auto_assign_loyalty_program_on_invoice(doc)
+	allow_zero_valuation_for_pos(doc)
+
+
+def allow_zero_valuation_for_pos(doc):
+	"""Let POS lines post without a valuation rate instead of blocking the sale.
+
+	Retail catalogue items are often sold before any cost basis exists (never
+	received / no valuation rate), which otherwise fails with "Valuation Rate
+	Missing" at the till. Scoped to POS invoices so regular sales still enforce
+	valuation.
+	"""
+	if not doc.get("pos_profile"):
+		return
+	for item in doc.get("items", []):
+		item.allow_zero_valuation_rate = 1
 
 
 def apply_tax_inclusive(doc):
