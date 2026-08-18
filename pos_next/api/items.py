@@ -264,6 +264,14 @@ def get_item_detail(item, doc=None, warehouse=None, price_list=None, company=Non
 			"doctype": "Sales Invoice",
 			"item_code": item.get("item_code"),
 			"company": item.get("company"),
+			# Without a currency, ERPNext's get_item_details calls
+			# get_exchange_rate(None, ...) and raises a TypeError; fall back to
+			# the price list / company currency for single-currency setups.
+			"currency": (
+				item.get("currency")
+				or item.get("price_list_currency")
+				or frappe.get_cached_value("Company", item.get("company"), "default_currency")
+			),
 			"qty": item.get("qty", 1),
 			"uom": item.get("uom"),  # Include UOM to fetch correct price list rate
 			"selling_price_list": item.get("selling_price_list"),
