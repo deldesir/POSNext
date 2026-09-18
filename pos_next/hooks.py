@@ -13,15 +13,14 @@ app_license = "agpl-3.0"
 # required_apps = []
 
 # Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "pos_next",
-# 		"logo": "/assets/pos_next/logo.png",
-# 		"title": "POS Next",
-# 		"route": "/pos_next",
-# 		"has_permission": "pos_next.api.permission.has_app_permission"
-# 	}
-# ]
+add_to_apps_screen = [
+	{
+		"name": "pos_next",
+		"logo": "/assets/pos_next/images/pos_next_logo.svg",
+		"title": "POS Next",
+		"route": "/pos",
+	}
+]
 
 # Includes in <head>
 # ------------------
