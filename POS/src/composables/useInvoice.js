@@ -2,6 +2,7 @@ import { promoApi } from "@/utils/promoApi";
 import { createResource } from "frappe-ui";
 import { computed, ref, toRaw } from "vue";
 import { isOffline, getCachedItem } from "@/utils/offline";
+import { resolveLocalUomPrice } from "@/utils/uomPrice";
 import { useSerialNumberStore } from "@/stores/serialNumber";
 import { CoalescingMutex } from "@/utils/mutex";
 import { logger } from "@/utils/logger";
@@ -104,9 +105,12 @@ export function useInvoice() {
 	});
 
 	/**
-	 * Resolve UOM pricing from IndexedDB or server.
-	 * Offline: reads item from IndexedDB for persisted uom_prices and conversion data.
-	 * Online: fetches from server for customer-specific rates.
+	 * Resolve UOM pricing from the server or the catalogue payload.
+	 * Online: asks the server (customer-specific rates, validity windows) and uses
+	 * its answer when it is a positive price. ERPNext answers 0 for a UOM without
+	 * an Item Price of its own and for a qty outside the price's packing unit;
+	 * that 0 must not replace a price the picker just displayed, so the local
+	 * resolution below applies then too. Offline: catalogue payload only.
 	 * @param {Object} item - Item with item_code, rate, price_list_rate
 	 * @param {string} uom - Target UOM
 	 * @param {number} conversionFactor - UOM conversion factor
@@ -124,27 +128,23 @@ export function useInvoice() {
 					qty,
 					uom,
 				});
-				return {
-					rate: itemDetails.price_list_rate || itemDetails.rate,
-					price_list_rate: itemDetails.price_list_rate,
-				};
+				const serverRate = Number(itemDetails?.price_list_rate ?? itemDetails?.rate) || 0;
+				if (serverRate > 0) {
+					return {
+						rate: serverRate,
+						price_list_rate: serverRate,
+					};
+				}
+				log.warn(`Server has no price for ${item.item_code} in ${uom}; resolving from the catalogue`);
 			} catch (err) {
 				log.warn("Server UOM pricing unavailable, resolving from IndexedDB", err);
 			}
 		}
 
-		// Offline: resolve from IndexedDB
+		// Resolve from the catalogue payload (IndexedDB copy when it exists)
 		const cachedItem = await getCachedItem(item.item_code);
 		const source = cachedItem || item;
-
-		let rate;
-		if (source.uom_prices?.[uom]) {
-			rate = source.uom_prices[uom];
-		} else {
-			const baseRate = source.price_list_rate || source.rate || 0;
-			const currentConversion = source.conversion_factor || 1;
-			rate = (baseRate / currentConversion) * conversionFactor;
-		}
+		const rate = resolveLocalUomPrice(source, uom, conversionFactor);
 
 		return { rate, price_list_rate: rate };
 	}

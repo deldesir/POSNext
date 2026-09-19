@@ -97,6 +97,43 @@ def _fetch_item_uom_prices(item_code, price_list, transaction_date=None):
 	return uom_prices
 
 
+def pick_display_price(uom_prices, stock_uom, conversions=None):
+	"""Choose the price a catalogue tile shows for an item.
+
+	Returns ``(rate, uom, conversion_factor)``:
+	- the stock UOM price when one exists (an Item Price without a UOM counts
+	  as the stock UOM, like ERPNext does);
+	- otherwise the price of the smallest pack that has one, quoted AS-IS in
+	  that pack's UOM with its conversion factor. No per-unit price is
+	  invented: ERPNext prices a UOM that has no Item Price at 0, and dividing
+	  an arbitrary pack (previously the alphabetically first one) produced
+	  fractional rates the business never set;
+	- a price whose UOM is missing from the item's conversion table is shown
+	  as-is in that UOM (the POS cannot convert it either way);
+	- ``(0, stock_uom, 1)`` when the item has no price at all. A zero-rate
+	  Item Price counts as no price.
+	"""
+	uom_prices = uom_prices or {}
+	conversions = conversions or {}
+	for key in (stock_uom, "", None):
+		if key in uom_prices and flt(uom_prices[key]):
+			return flt(uom_prices[key]), stock_uom, 1
+
+	best = None
+	unconvertible = None
+	for uom, rate in uom_prices.items():
+		if not uom or uom == stock_uom or not flt(rate):
+			continue
+		factor = flt(conversions.get(uom))
+		if factor <= 0:
+			if unconvertible is None or uom < unconvertible[1]:
+				unconvertible = (flt(rate), uom, 1)
+			continue
+		if best is None or factor < best[2] or (factor == best[2] and uom < best[1]):
+			best = (flt(rate), uom, factor)
+	return best or unconvertible or (0.0, stock_uom, 1)
+
+
 def get_stock_availability(item_code, warehouse):
 	"""Return total available quantity for an item in the given warehouse."""
 	if not warehouse:
@@ -312,9 +349,13 @@ def get_item_detail(item, doc=None, warehouse=None, price_list=None, company=Non
 	if company:
 		item["company"] = company
 
-	# Create a proper doc structure with company
+	# Create a proper doc structure with company. The date makes ERPNext apply the
+	# Item Price validity window (valid_from / valid_upto) exactly as the catalogue
+	# grid does; without it every row is a candidate and a future-dated price wins.
 	if not doc and company:
-		doc = frappe._dict({"doctype": "Sales Invoice", "company": company})
+		doc = frappe._dict(
+			{"doctype": "Sales Invoice", "company": company, "posting_date": today, "transaction_date": today}
+		)
 
 	# Fetch all needed Item fields in a single query (performance optimization)
 	item_data = (
@@ -340,6 +381,7 @@ def get_item_detail(item, doc=None, warehouse=None, price_list=None, company=Non
 			),
 			"qty": item.get("qty", 1),
 			"uom": item.get("uom"),  # Include UOM to fetch correct price list rate
+			"customer": item.get("customer"),  # customer-specific Item Price / pricing rules
 			"selling_price_list": item.get("selling_price_list"),
 			"price_list_currency": item.get("price_list_currency"),
 			"plc_conversion_rate": item.get("plc_conversion_rate"),
@@ -1412,22 +1454,14 @@ def get_items(
 			stock_uom = item.get("stock_uom")
 
 			# Use pre-loaded price map instead of per-item queries
-			price_row = None
 			item_prices = uom_prices_map.get(item["item_code"], {})
+			display_rate, display_uom, display_factor = pick_display_price(
+				item_prices, stock_uom, conversion_map.get(item["item_code"])
+			)
 
-			# 1) Try price explicitly for stock UOM (preferred)
-			if stock_uom and stock_uom in item_prices:
-				price_row = {"price_list_rate": item_prices[stock_uom], "uom": stock_uom}
-
-			# 2) If not found, try any price for the item (and capture its UOM)
-			elif item_prices:
-				# Get first available price
-				first_uom = next(iter(item_prices.keys()))
-				price_row = {"price_list_rate": item_prices[first_uom], "uom": first_uom}
-
-			# 3) If still not found and it's a template, derive min variant price
+			# Template without a price of its own: derive min variant price
 			derived_price = None
-			if not price_row and item.get("has_variants"):
+			if not display_rate and item.get("has_variants"):
 				ItemPrice = DocType("Item Price")
 				Item = DocType("Item")
 				variant_prices = (
@@ -1447,35 +1481,14 @@ def get_items(
 					else None
 				)
 
-			# Finalize display price & display UOM
-			display_rate = 0.0
-			display_uom = stock_uom
-
-			if price_row:
-				raw_rate = flt(price_row.get("price_list_rate") or 0)
-				price_uom = price_row.get("uom") or stock_uom
-				if price_uom and stock_uom and price_uom != stock_uom:
-					# convert to per-stock-UOM if possible
-					cf = flt(conversion_map[item["item_code"]].get(price_uom) or 0)
-					if cf:
-						display_rate = raw_rate / cf
-						display_uom = stock_uom
-					else:
-						# no conversion available: show as is (price UOM)
-						display_rate = raw_rate
-						display_uom = price_uom
-				else:
-					display_rate = raw_rate
-					display_uom = stock_uom
-			elif derived_price is not None:
-				display_rate = flt(derived_price)
-				display_uom = stock_uom
+			if not display_rate and derived_price is not None:
+				display_rate, display_uom, display_factor = flt(derived_price), stock_uom, 1
 
 			item["rate"] = display_rate
 			item["price_list_rate"] = display_rate
 			item["uom"] = display_uom
 			item["price_uom"] = display_uom
-			item["conversion_factor"] = 1
+			item["conversion_factor"] = display_factor
 			item["price_list_rate_price_uom"] = display_rate
 
 			# ===================================================================
@@ -1700,13 +1713,13 @@ def get_items_bulk(
 			item_code = item["item_code"]
 			stock_uom = item.get("stock_uom")
 
-			# Price: prefer stock_uom, then None/empty UOM (Item Price without UOM)
+			# Price: same rule as get_items so the tile reads the same whichever endpoint filled the cache
 			prices = uom_prices_map.get(item_code, {})
-			item["rate"] = flt(prices.get(stock_uom) or prices.get(None) or prices.get("") or 0)
+			item["rate"], item["uom"], item["conversion_factor"] = pick_display_price(
+				prices, stock_uom, conversion_map.get(item_code)
+			)
 			item["price_list_rate"] = item["rate"]
-			item["uom"] = stock_uom
-			item["price_uom"] = stock_uom
-			item["conversion_factor"] = 1
+			item["price_uom"] = item["uom"]
 			item["price_list_rate_price_uom"] = item["rate"]
 
 			# Stock: stock items use Bin, bundles use component-based availability
@@ -1829,6 +1842,9 @@ def get_item_details(item_code, pos_profile, customer=None, qty=1, uom=None):
 		# Include UOM if provided to fetch correct price list rate
 		if uom:
 			item["uom"] = uom
+		# The POS sends the cart's customer so customer-specific prices apply; it was dropped here
+		if customer:
+			item["customer"] = customer
 
 		return get_item_detail(
 			item=json.dumps(item),
