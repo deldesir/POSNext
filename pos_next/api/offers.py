@@ -635,3 +635,46 @@ def validate_coupon(coupon_code: str, company: str, customer: str | None = None)
 		return {"valid": False, "message": _("This coupon is not valid for this customer")}
 
 	return {"valid": True, "coupon": coupon}
+
+
+@frappe.whitelist()
+def item_has_active_promotion(item_code: str, company: str | None = None, qty: float = 1, pos_profile: str | None = None) -> dict:
+	"""Fallback for the optional POSNext Promotions app.
+
+	The POS asks this when an item is edited, to show a promotion hint. The app's
+	own offers are built by the same helpers get_offers uses, so the hint matches
+	what the cart will apply. Answers ``{"has_promotion": False}`` when nothing
+	covers the item, including when the item or company is unknown.
+	"""
+	from frappe.utils.nestedset import get_ancestors_of
+
+	item = frappe.db.get_value("Item", item_code, ["item_group", "brand"], as_dict=True) if item_code else None
+	if not item:
+		return {"has_promotion": False}
+
+	if not company:
+		if pos_profile:
+			company = frappe.db.get_value("POS Profile", pos_profile, "company")
+		company = company or frappe.defaults.get_user_default("Company")
+	if not company:
+		return {"has_promotion": False}
+
+	groups = {item.item_group, *get_ancestors_of("Item Group", item.item_group)} if item.item_group else set()
+	quantity = flt(qty) or 1
+	date = nowdate()
+
+	for offer in _get_promotional_scheme_offers(company, date) + _get_standalone_pricing_rule_offers(company, date):
+		covers = (
+			item_code in offer.eligible_items
+			or bool(groups & set(offer.eligible_item_groups))
+			or (item.brand and item.brand in offer.eligible_brands)
+		)
+		if not covers:
+			continue
+		if offer.min_qty and quantity < offer.min_qty:
+			continue
+		if offer.max_qty and quantity > offer.max_qty:
+			continue
+		return {"has_promotion": True, "offer": offer.name, "title": offer.title}
+
+	return {"has_promotion": False}
