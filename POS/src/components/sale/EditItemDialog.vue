@@ -528,6 +528,7 @@
 
 <script setup>
 import { promoApi } from "@/utils/promoApi";
+import { resolveLocalUomPrice } from "@/utils/uomPrice";
 import { useToast } from "@/composables/useToast";
 import { usePOSSettingsStore } from "@/stores/posSettings";
 import { usePOSOffersStore } from "@/stores/posOffers";
@@ -931,9 +932,10 @@ async function getRateForUom(uom) {
 		}
 	}
 
-	// Secondary source: preloaded UOM prices on item payload.
-	if (localItem.value.uom_prices?.[uom] !== undefined) {
-		return Number(localItem.value.uom_prices[uom]) || 0;
+	// Secondary source: the catalogue payload (Item Price rows, then the nearest pack).
+	const localRateForUom = resolveLocalUomPrice(localItem.value, uom, getConversionFactorForUom(uom));
+	if (localRateForUom > 0) {
+		return localRateForUom;
 	}
 
 	// Final fallback: keep current known item rate (no conversion-based pricing).

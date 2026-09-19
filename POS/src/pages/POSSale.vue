@@ -1081,6 +1081,7 @@ let _posInitPromise = null;
 
 <script setup>
 import ShiftClosingDialog from "@/components/ShiftClosingDialog.vue";
+import { resolveLocalUomPrice } from "@/utils/uomPrice";
 import ShiftOpeningDialog from "@/components/ShiftOpeningDialog.vue";
 import ClearCacheOverlay from "@/components/common/ClearCacheOverlay.vue";
 import SessionLockScreen from "@/components/common/SessionLockScreen.vue";
@@ -1960,9 +1961,9 @@ function handleItemSelected(item, autoAdd = false) {
 		try {
 			// Check if item has resolved barcode data (weighted/priced)
 			if (item.resolved_qty && item.resolved_barcode_type) {
-				// Get the unit price for the resolved UOM from uom_prices, or fall back to item rate
+				// Price of the resolved UOM from the catalogue payload, or the tile rate
 				const resolvedUom = item.resolved_uom || item.uom;
-				const unitRate = item.uom_prices?.[resolvedUom] || item.rate;
+				const unitRate = resolveLocalUomPrice(item, resolvedUom) || item.rate;
 
 				const resolvedItem = {
 					...item,
