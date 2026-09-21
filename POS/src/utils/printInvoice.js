@@ -1,4 +1,5 @@
 import { call } from "@/utils/apiWrapper";
+import { DEFAULT_CURRENCY, DEFAULT_LOCALE, formatCurrency, formatCurrencyNumber } from "@/utils/currency";
 import { logger } from "@/utils/logger";
 import { getOfflineReceiptPayload } from "@/utils/offline/offlineReceiptCache";
 import { getOfflineInvoiceByOfflineId } from "@/utils/offline/sync";
@@ -11,15 +12,12 @@ import {
 const log = logger.create("PrintInvoice");
 
 const DEFAULT_PRINT_FORMAT = "POS Next Receipt";
-const printFormatMetaCache = new Map();
+// POS Profile name -> { printFormat, letterhead }, resolved once per session
+const profilePrintSettingsCache = new Map();
 
 // ============================================================================
 // Shared helpers
 // ============================================================================
-
-function formatCurrency(amount) {
-	return Number.parseFloat(amount || 0).toFixed(2);
-}
 
 /**
  * Fall back to summing payment rows when paid_amount is not set —
@@ -112,209 +110,225 @@ export async function hydrateLocalOnlyInvoice(invoiceData) {
 	return invoiceData;
 }
 
+// ============================================================================
+// Local receipt (offline invoices, QZ Tray for local docs, popup fallback)
+// Mirrors the "POS Next Receipt" print format so a receipt reads the same
+// whichever path produced it.
+// ============================================================================
+
+const RECEIPT_CONTEXT = "POS Receipt";
+const RECEIPT_OPTIONS_KEY = "pos_next_receipt_options";
+
+function loadReceiptOptions() {
+	try {
+		const stored = window.localStorage?.getItem(RECEIPT_OPTIONS_KEY);
+		if (stored) return { printUomAfterQuantity: false, ...JSON.parse(stored) };
+	} catch {
+		// storage unavailable (private window, blocked site data)
+	}
+	return { printUomAfterQuantity: false };
+}
+
+let receiptOptions = loadReceiptOptions();
+
+/**
+ * Apply the receipt-relevant Print Settings from the bootstrap payload.
+ * Kept in localStorage so an offline reload still prints the same way.
+ * @param {{print_uom_after_quantity?: number|boolean}|null} printSettings
+ */
+export function configureReceipt(printSettings) {
+	if (!printSettings) return;
+	receiptOptions = {
+		printUomAfterQuantity: Boolean(Number(printSettings.print_uom_after_quantity)),
+	};
+	try {
+		window.localStorage?.setItem(RECEIPT_OPTIONS_KEY, JSON.stringify(receiptOptions));
+	} catch {
+		// storage unavailable: the in-memory value still applies this session
+	}
+}
+
+const t = (msg, replace = null) => __(msg, replace, RECEIPT_CONTEXT);
+
+function escapeHTML(value) {
+	return String(value ?? "")
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;");
+}
+
+function num(value) {
+	return Number.parseFloat(value) || 0;
+}
+
+function formatQty(value) {
+	const rounded = Math.round(value * 1000) / 1000;
+	return rounded.toLocaleString(DEFAULT_LOCALE, { maximumFractionDigits: 3 });
+}
+
+function receiptLine(label, value, cls = "") {
+	return `<div class="pnr-line ${cls}"><span class="pnr-l">${label}</span><span class="pnr-r">${value}</span></div>`;
+}
+
 const RECEIPT_STYLES = `
+	@page { margin: 0; }
 	* { margin: 0; padding: 0; box-sizing: border-box; }
-	body {
-		font-family: 'Courier New', monospace;
-		padding: 10px; width: 80mm; margin: 0; max-width: 80mm;
-		font-weight: bold; color: black;
-	}
-	.receipt { width: 100%; }
-	.header { text-align: center; margin-bottom: 20px; border-bottom: 2px dashed #000; padding-bottom: 10px; }
-	.company-name { font-size: 18px; font-weight: bold; margin-bottom: 5px; }
-	.invoice-info { margin-bottom: 15px; font-size: 12px; }
-	.invoice-info div { display: flex; justify-content: space-between; margin-bottom: 3px; }
-	.partial-status { color: #000; font-weight: bold; margin-bottom: 5px; }
-	.items-table { width: 100%; margin-bottom: 15px; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 10px 0; }
-	.item-row { margin-bottom: 10px; font-size: 12px; }
-	.item-name { font-weight: bold; margin-bottom: 3px; }
-	.item-details { display: flex; justify-content: space-between; font-size: 11px; }
-	.item-discount { display: flex; justify-content: space-between; font-size: 10px; margin-top: 2px; }
-	.item-serials { font-size: 9px; margin-top: 3px; padding: 3px 5px; border: 1px dashed #000; border-radius: 2px; }
-	.item-serials-label { font-weight: bold; margin-bottom: 2px; }
-	.item-serials-list { word-break: break-all; }
-	.totals { margin-top: 15px; border-top: 1px dashed #000; padding-top: 10px; }
-	.total-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; }
-	.grand-total { font-size: 16px; font-weight: bold; border-top: 2px solid #000; padding-top: 10px; margin-top: 10px; }
-	.payments { margin-top: 15px; border-top: 1px dashed #000; padding-top: 10px; }
-	.payment-row { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 11px; }
-	.total-paid { font-weight: bold; border-top: 1px solid #000; padding-top: 5px; margin-top: 5px; }
-	.outstanding-row {
-		display: flex; justify-content: space-between; font-size: 13px; font-weight: bold;
-		border: 1px solid #000; padding: 8px; margin-top: 8px; border-radius: 4px;
-	}
-	.offline-badge {
-		text-align: center; font-size: 11px; font-weight: bold;
-		border: 1px dashed #000; padding: 4px; margin-bottom: 10px;
-	}
-	.footer { text-align: center; margin-top: 20px; padding-top: 10px; border-top: 2px dashed #000; font-size: 11px; }
+	body { margin: 0; padding: 4mm; background: #fff; }
 	@media print {
-		@page { size: 80mm auto; margin: 0; }
-		body { width: 80mm; padding: 5mm; margin: 0; }
+		body { padding: 0 2mm; }
 		.no-print { display: none; }
 	}
+	.pnr {
+		width: 100%; max-width: 72mm; margin: 0 auto;
+		font-family: "DejaVu Sans", Arial, Helvetica, sans-serif;
+		font-size: 12px; line-height: 1.35; color: #000;
+	}
+	.pnr-center { text-align: center; }
+	.pnr-company { font-size: 15px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
+	.pnr-title { margin: 8px 0 6px; font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; }
+	.pnr-banner { border: 1.5px solid #000; padding: 3px; margin: 0 0 6px; font-weight: 700; letter-spacing: 1px; text-align: center; text-transform: uppercase; }
+	.pnr-rule { border-top: 1px dashed #000; margin: 6px 0; height: 0; }
+	.pnr-line { display: table; width: 100%; }
+	.pnr-line > .pnr-l { display: table-cell; text-align: left; vertical-align: top; word-wrap: break-word; padding-right: 6px; }
+	.pnr-line > .pnr-r { display: table-cell; text-align: right; vertical-align: bottom; white-space: nowrap; width: 1%; }
+	.pnr-meta { font-size: 11px; margin: 1px 0; table-layout: fixed; }
+	.pnr-meta > .pnr-l { width: 30%; }
+	.pnr-meta > .pnr-r { width: 70%; white-space: normal; vertical-align: top; }
+	.pnr-head { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 4px; }
+	.pnr-item { margin-bottom: 5px; page-break-inside: avoid; break-inside: avoid; }
+	.pnr-item-name { font-weight: 700; word-wrap: break-word; }
+	.pnr-item-calc { font-size: 11.5px; }
+	.pnr-note { font-size: 10.5px; }
+	.pnr-note > .pnr-l { padding-left: 8px; }
+	.pnr-count { font-size: 10.5px; }
+	.pnr-sum { margin: 1px 0; }
+	.pnr-grand { font-size: 16px; font-weight: 700; border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; padding: 4px 0; margin: 5px 0; }
+	.pnr-due { font-weight: 700; border: 1.5px solid #000; padding: 3px 4px; margin-top: 5px; }
+	.pnr-thanks { font-size: 11.5px; font-weight: 700; margin-top: 8px; }
 `;
 
 /**
  * Inner receipt HTML (no shell). Used for local/offline invoices and QZ Tray.
  */
 export function buildReceiptHTML(invoiceData) {
+	const isReturn = Boolean(invoiceData.is_return);
+	const sgn = isReturn ? -1 : 1;
+	const money = (value) => formatCurrencyNumber(num(value));
+	const moneyWithSymbol = (value) =>
+		formatCurrency(num(value), invoiceData.currency || DEFAULT_CURRENCY);
+
 	const items = invoiceData.items || [];
-	const paidAmount = derivePaidAmount(invoiceData);
 	const itemsHtml = items
 		.map((item) => {
-			const hasDiscount =
-				(item.discount_percentage && Number.parseFloat(item.discount_percentage) > 0) ||
-				(item.discount_amount && Number.parseFloat(item.discount_amount) > 0);
-			const isFree = item.is_free_item;
-			const qty = item.quantity || item.qty || 0;
-			const displayRate = item.price_list_rate || item.rate || 0;
-			const subtotal = qty * displayRate;
+			const qty = num(item.quantity ?? item.qty) * sgn;
+			const rate = num(item.rate);
+			const listRate = num(item.price_list_rate);
+			const discounted = listRate > rate && !item.is_free_item;
+			const unit = discounted ? listRate : rate;
+			const gross = qty * unit;
+			const net = item.amount != null ? num(item.amount) * sgn : qty * rate;
+			const uom =
+				receiptOptions.printUomAfterQuantity && item.uom ? ` ${escapeHTML(__(item.uom))}` : "";
+			const qtyText = `${formatQty(qty)}${uom}`;
+			const pct = num(item.discount_percentage)
+				? ` ${formatQty(num(item.discount_percentage))} %`
+				: "";
 			return `
-						<div class="item-row">
-							<div class="item-name">${item.item_name || item.item_code} ${isFree ? __("(FREE)") : ""}</div>
-							<div class="item-details">
-								<span>${qty} × ${formatCurrency(displayRate)}</span>
-								<span><strong>${formatCurrency(subtotal)}</strong></span>
-							</div>
-							${
-								hasDiscount
-									? `<div class="item-discount"><span>Discount ${
-											item.discount_percentage
-												? `(${Number(item.discount_percentage).toFixed(
-														2
-												  )}%)`
-												: ""
-									  }</span><span>-${formatCurrency(
-											item.discount_amount || 0
-									  )}</span></div>`
-									: ""
-							}
-							${
-								item.serial_no
-									? `<div class="item-serials"><div class="item-serials-label">${__(
-											"Serial No:"
-									  )}</div><div class="item-serials-list">${String(
-											item.serial_no
-									  ).replace(/\n/g, ", ")}</div></div>`
-									: ""
-							}
-						</div>`;
+				<div class="pnr-item">
+					<div class="pnr-item-name">${escapeHTML(item.item_name || item.item_code)}</div>
+					${
+						item.is_free_item
+							? receiptLine(qtyText, t("Free"), "pnr-item-calc")
+							: receiptLine(`${qtyText} ×&nbsp;${money(unit)}`, money(gross), "pnr-item-calc")
+					}
+					${discounted ? receiptLine(`${t("Discount")}${pct}`, `-${money(gross - net)}`, "pnr-note") : ""}
+					${
+						item.serial_no
+							? receiptLine(
+									`${t("Serial No")} ${escapeHTML(String(item.serial_no).replace(/\n/g, ", "))}`,
+									"",
+									"pnr-note"
+							  )
+							: ""
+					}
+					${item.batch_no ? receiptLine(`${t("Batch")} ${escapeHTML(item.batch_no)}`, "", "pnr-note") : ""}
+				</div>`;
 		})
 		.join("");
 
+	const grandTotal = num(invoiceData.grand_total);
+	const roundedTotal = num(invoiceData.rounded_total);
+	const totalDue =
+		roundedTotal && !invoiceData.disable_rounded_total ? roundedTotal : grandTotal;
+	const rounding = invoiceData.disable_rounded_total ? 0 : num(invoiceData.rounding_adjustment);
+	const discount = Math.abs(num(invoiceData.discount_amount));
+	const taxes = num(invoiceData.total_taxes_and_charges);
+	const subtotal =
+		invoiceData.total != null ? num(invoiceData.total) : grandTotal - taxes + discount - rounding;
+	const payments = (invoiceData.payments || []).filter((p) => num(p.amount));
+	const paidAmount = derivePaidAmount(invoiceData);
+	const change = num(invoiceData.change_amount);
+	const outstanding = num(invoiceData.outstanding_amount);
+	const customer = invoiceData.customer_name || invoiceData.customer;
+	const postedAt = invoiceData.posting_date
+		? `${invoiceData.posting_date}${
+				invoiceData.posting_time ? ` ${String(invoiceData.posting_time).slice(0, 5)}` : ""
+		  }`
+		: new Date().toLocaleString();
+
 	return `
-			<div class="receipt">
-				<div class="header">
-					<div class="company-name">${invoiceData.company || "POS Next"}</div>
-					<div style="font-size: 12px;">${invoiceData.header || __("TAX INVOICE")}</div>
-				</div>
+		<div class="pnr">
+			<div class="pnr-center">
+				<div class="pnr-company">${escapeHTML(invoiceData.company || "")}</div>
+				<div class="pnr-title">${escapeHTML(
+					invoiceData.header || (isReturn ? t("Credit Note") : t("Invoice"))
+				)}</div>
+			</div>
+			${invoiceData.is_offline ? `<div class="pnr-banner">${t("Offline, pending sync")}</div>` : ""}
 
-				${invoiceData.is_offline ? `<div class="offline-badge">${__("OFFLINE — PENDING SYNC")}</div>` : ""}
+			${receiptLine(t("No."), escapeHTML(invoiceData.name), "pnr-meta")}
+			${receiptLine(t("Date"), escapeHTML(postedAt), "pnr-meta")}
+			${
+				isReturn && invoiceData.return_against
+					? receiptLine(t("Return of"), escapeHTML(invoiceData.return_against), "pnr-meta")
+					: ""
+			}
+			${customer ? receiptLine(t("Customer"), escapeHTML(customer), "pnr-meta") : ""}
 
-				<div class="invoice-info">
-					<div><span>${__("Invoice #:")}</span><span><strong>${invoiceData.name}</strong></span></div>
-					<div><span>${__("Date:")}</span><span>${new Date(
-		invoiceData.posting_date || Date.now()
-	).toLocaleString()}</span></div>
-					${
-						invoiceData.customer_name || invoiceData.customer
-							? `<div><span>${__("Customer:")}</span><span>${
-									invoiceData.customer_name || invoiceData.customer
-							  }</span></div>`
-							: ""
-					}
-					${
-						invoiceData.status === "Partly Paid" ||
-						(invoiceData.outstanding_amount &&
-							invoiceData.outstanding_amount > 0 &&
-							invoiceData.outstanding_amount < invoiceData.grand_total)
-							? `<div class="partial-status"><span>${__("Status:")}</span><span>${__(
-									"PARTIAL PAYMENT"
-							  )}</span></div>`
-							: ""
-					}
-				</div>
+			<div class="pnr-rule"></div>
 
-				<div class="items-table">
-					${itemsHtml}
-				</div>
+			${receiptLine(t("Item"), t("Amount"), "pnr-head")}
+			${itemsHtml}
+			<div class="pnr-count">${t("Items: {0}", [items.length])}</div>
 
-				<div class="totals">
-					${
-						invoiceData.total_taxes_and_charges &&
-						invoiceData.total_taxes_and_charges > 0
-							? `
-					<div class="total-row"><span>${__("Subtotal:")}</span><span>${formatCurrency(
-									(invoiceData.grand_total || 0) -
-										(invoiceData.total_taxes_and_charges || 0)
-							  )}</span></div>
-					<div class="total-row"><span>${__("Tax:")}</span><span>${formatCurrency(
-									invoiceData.total_taxes_and_charges
-							  )}</span></div>`
-							: ""
-					}
-					${
-						invoiceData.discount_amount
-							? `
-					<div class="total-row" style="color: #28a745;"><span>Additional Discount${
-						invoiceData.additional_discount_percentage
-							? ` (${Number(invoiceData.additional_discount_percentage).toFixed(
-									1
-							  )}%)`
-							: ""
-					}:</span><span>-${formatCurrency(
-									Math.abs(invoiceData.discount_amount)
-							  )}</span></div>`
-							: ""
-					}
-					<div class="total-row grand-total"><span>${__("TOTAL:")}</span><span>${formatCurrency(
-		invoiceData.grand_total
-	)}</span></div>
-				</div>
+			<div class="pnr-rule"></div>
 
-				${
-					invoiceData.payments && invoiceData.payments.length > 0
-						? `
-				<div class="payments">
-					<div style="font-weight: bold; margin-bottom: 5px; font-size: 12px;">${__("Payments:")}</div>
-					${invoiceData.payments
-						.map(
-							(p) =>
-								`<div class="payment-row"><span>${
-									p.mode_of_payment
-								}:</span><span>${formatCurrency(p.amount)}</span></div>`
-						)
-						.join("")}
-					<div class="payment-row total-paid"><span>${__("Total Paid:")}</span><span>${formatCurrency(
-								paidAmount
-						  )}</span></div>
-					${
-						invoiceData.change_amount && invoiceData.change_amount > 0
-							? `<div class="payment-row" style="font-weight: bold; margin-top: 5px;"><span>${__(
-									"Change:"
-							  )}</span><span>${formatCurrency(
-									invoiceData.change_amount
-							  )}</span></div>`
-							: ""
-					}
-					${
-						invoiceData.outstanding_amount && invoiceData.outstanding_amount > 0
-							? `<div class="outstanding-row"><span>${__(
-									"BALANCE DUE:"
-							  )}</span><span>${formatCurrency(
-									invoiceData.outstanding_amount
-							  )}</span></div>`
-							: ""
-					}
-				</div>`
-						: ""
-				}
+			${discount || taxes || rounding ? receiptLine(t("Subtotal"), money(subtotal * sgn), "pnr-sum") : ""}
+			${discount ? receiptLine(t("Discount"), `-${money(discount)}`, "pnr-sum") : ""}
+			${taxes ? receiptLine(__("Tax"), money(taxes * sgn), "pnr-sum") : ""}
+			${rounding ? receiptLine(t("Rounding"), money(rounding * sgn), "pnr-sum") : ""}
+			${receiptLine(isReturn ? t("Refund Total") : t("Total"), moneyWithSymbol(totalDue * sgn), "pnr-grand")}
 
-				<div class="footer">
-					<div style="margin-bottom: 5px;">${invoiceData.footer || __("Thank you for your business!")}</div>
-				</div>
-			</div>`;
+			${payments
+				.map((p) => receiptLine(escapeHTML(__(p.mode_of_payment)), money(num(p.amount) * sgn), "pnr-sum"))
+				.join("")}
+			${
+				payments.length > 1 || change
+					? receiptLine(isReturn ? t("Refunded") : t("Paid"), money(num(paidAmount) * sgn), "pnr-sum")
+					: ""
+			}
+			${change > 0 ? receiptLine(t("Change"), money(change), "pnr-sum") : ""}
+			${
+				!isReturn && outstanding > 0
+					? receiptLine(t("Balance Due"), moneyWithSymbol(outstanding), "pnr-due")
+					: ""
+			}
+
+			<div class="pnr-center pnr-thanks">${escapeHTML(
+				invoiceData.footer || t("Thank you for your business!")
+			)}</div>
+		</div>`;
 }
 
 function buildReceiptDocumentHTML(invoiceData, { includeControls = false } = {}) {
@@ -352,23 +366,52 @@ async function resolvePrintSettings(posProfile, printFormat, letterhead) {
 	if (printFormat) return { printFormat, letterhead };
 
 	if (posProfile) {
-		try {
-			const doc = await call("frappe.client.get", {
-				doctype: "POS Profile",
-				name: posProfile,
-			});
-			if (doc) {
-				return {
-					printFormat: doc.print_format || DEFAULT_PRINT_FORMAT,
-					letterhead: letterhead || doc.letter_head || null,
-				};
+		if (!profilePrintSettingsCache.has(posProfile)) {
+			try {
+				const doc = await call("frappe.client.get", {
+					doctype: "POS Profile",
+					name: posProfile,
+				});
+				if (doc) {
+					profilePrintSettingsCache.set(posProfile, {
+						printFormat: doc.print_format || DEFAULT_PRINT_FORMAT,
+						letterhead: doc.letter_head || null,
+					});
+				}
+			} catch (err) {
+				log.warn("Could not fetch POS Profile print settings:", err);
 			}
-		} catch (err) {
-			log.warn("Could not fetch POS Profile print settings:", err);
+		}
+		const cached = profilePrintSettingsCache.get(posProfile);
+		if (cached) {
+			return { printFormat: cached.printFormat, letterhead: letterhead || cached.letterhead };
 		}
 	}
 
 	return { printFormat: DEFAULT_PRINT_FORMAT, letterhead };
+}
+
+/**
+ * Seed the print settings of the session's POS Profile (from the bootstrap
+ * payload) so the first print does not wait on a lookup: browsers only allow
+ * the print window shortly after the cashier's click.
+ * @param {{name: string, print_format?: string, letter_head?: string}|null} posProfile
+ */
+export function rememberProfilePrintSettings(posProfile) {
+	if (!posProfile?.name) return;
+	profilePrintSettingsCache.set(posProfile.name, {
+		printFormat: posProfile.print_format || DEFAULT_PRINT_FORMAT,
+		letterhead: posProfile.letter_head || null,
+	});
+}
+
+/**
+ * Print language for an invoice: the document's own language (ERPNext fills it
+ * from the customer / system default, and desk printing uses it too). Empty
+ * means "let the server use the signed-in user's language".
+ */
+function printLanguage(invoiceData) {
+	return invoiceData?.language || "";
 }
 
 // ============================================================================
@@ -397,18 +440,22 @@ export async function printInvoice(invoiceData, printFormat = null, letterhead =
 		}
 
 		const doctype = invoiceData.doctype || "Sales Invoice";
-		const format = printFormat || DEFAULT_PRINT_FORMAT;
+		// No explicit format: use the invoice's POS Profile (the checkout path lands here)
+		const settings = await resolvePrintSettings(invoiceData.pos_profile, printFormat, letterhead);
+		const format = settings.printFormat;
+		const letterheadName = settings.letterhead;
 
 		const params = new URLSearchParams({
 			doctype,
 			name: invoiceData.name,
 			format,
-			no_letterhead: letterhead ? 0 : 1,
-			_lang: "en",
+			no_letterhead: letterheadName ? 0 : 1,
 			trigger_print: 1,
 			_t: Date.now(),
 		});
-		if (letterhead) params.append("letterhead", letterhead);
+		const lang = printLanguage(invoiceData);
+		if (lang) params.append("_lang", lang);
+		if (letterheadName) params.append("letterhead", letterheadName);
 
 					// Determine subpath dynamically
 			let subpath = "";
@@ -464,12 +511,14 @@ export async function printInvoiceByName(invoiceName, printFormat = null, letter
 // Silent printing (QZ Tray — no browser dialog)
 // ============================================================================
 
-export async function silentPrintDoc(doctype, name, printFormat) {
+export async function silentPrintDoc(doctype, name, printFormat, lang = "") {
 	const result = await call("frappe.www.printview.get_html_and_style", {
 		doc: doctype,
 		name,
 		print_format: printFormat,
 		no_letterhead: 1,
+		// read by Frappe's request language resolution, not by the method itself
+		...(lang ? { _lang: lang } : {}),
 	});
 
 	const html = result?.html || result?.message?.html;
@@ -494,7 +543,7 @@ export async function silentPrintDoc(doctype, name, printFormat) {
  * formats that rely on Bootstrap layout classes may render differently.
  * Paper size and margins are controlled by the QZ Tray config in qzTray.js.
  */
-export async function silentPrintInvoice(invoiceName, printFormat = null) {
+export async function silentPrintInvoice(invoiceName, printFormat = null, invoiceData = null) {
 	if (isLocalOnlyInvoiceName(invoiceName)) {
 		const doc = await hydrateLocalOnlyInvoice({ name: invoiceName });
 		if (doc.items?.length > 0) return silentPrintInvoiceFromDoc(doc);
@@ -504,9 +553,9 @@ export async function silentPrintInvoice(invoiceName, printFormat = null) {
 			)
 		);
 	}
-	const format = printFormat || DEFAULT_PRINT_FORMAT;
+	const { printFormat: format } = await resolvePrintSettings(invoiceData?.pos_profile, printFormat, null);
 
-	await silentPrintDoc("Sales Invoice", invoiceName, format);
+	await silentPrintDoc("Sales Invoice", invoiceName, format, printLanguage(invoiceData));
 	log.info(`Silent print sent for ${invoiceName}`);
 	return true;
 }
@@ -549,7 +598,7 @@ export async function printWithSilentFallback(invoiceData, printFormat = null) {
 	}
 
 	try {
-		await silentPrintInvoice(invoiceName, printFormat);
+		await silentPrintInvoice(invoiceName, printFormat, invoiceData);
 		return { method: "silent", success: true };
 	} catch (err) {
 		log.warn("Silent print failed, falling back to browser:", err?.message || err);
