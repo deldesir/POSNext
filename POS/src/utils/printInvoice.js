@@ -553,9 +553,21 @@ export async function silentPrintInvoice(invoiceName, printFormat = null, invoic
 			)
 		);
 	}
-	const { printFormat: format } = await resolvePrintSettings(invoiceData?.pos_profile, printFormat, null);
+	// Checkout only hands over the invoice name; the print format follows the
+	// invoice's POS Profile and the receipt language the invoice's own language,
+	// so fetch the document when neither came with the call. Silent printing has
+	// no popup to open, so the extra round trip costs nothing but time.
+	let doc = invoiceData;
+	if (!printFormat && !doc?.pos_profile) {
+		try {
+			doc = (await call("pos_next.api.invoices.get_invoice", { invoice_name: invoiceName })) || doc;
+		} catch (err) {
+			log.warn("Could not fetch the invoice before silent print:", err?.message || err);
+		}
+	}
+	const { printFormat: format } = await resolvePrintSettings(doc?.pos_profile, printFormat, null);
 
-	await silentPrintDoc("Sales Invoice", invoiceName, format, printLanguage(invoiceData));
+	await silentPrintDoc("Sales Invoice", invoiceName, format, printLanguage(doc));
 	log.info(`Silent print sent for ${invoiceName}`);
 	return true;
 }
