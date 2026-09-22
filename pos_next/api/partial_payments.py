@@ -483,6 +483,67 @@ def create_payment_entry(
 # ==========================================
 
 
+# The amount the customer owes on an invoice: the rounded total when rounding is
+# on, else the grand total. outstanding_amount is maintained against this figure.
+AMOUNT_DUE_SQL = "CASE WHEN disable_rounded_total = 0 AND rounded_total <> 0 THEN rounded_total ELSE grand_total END"
+
+# Conditions written against the ledger-maintained outstanding_amount rather than
+# paid_amount: paid_amount only holds what was taken at checkout, so an invoice
+# paid down later through a Payment Entry keeps paid_amount = 0 and would
+# otherwise never count as partially paid.
+OPEN_INVOICE_SQL = "outstanding_amount > %(tolerance)s"
+PARTLY_PAID_SQL = f"{OPEN_INVOICE_SQL} AND outstanding_amount < ({AMOUNT_DUE_SQL}) - %(tolerance)s"
+
+INVOICE_LIST_FIELDS = (
+	"name, customer, customer_name, posting_date, posting_time, grand_total, paid_amount, "
+	"outstanding_amount, status, creation, currency"
+)
+
+
+def _open_invoices(pos_profile: str, condition: str, limit: int) -> List[Dict]:
+	return frappe.db.sql(
+		f"""
+		SELECT {INVOICE_LIST_FIELDS}
+		FROM `tabSales Invoice`
+		WHERE pos_profile = %(pos_profile)s
+			AND docstatus = 1
+			AND is_pos = 1
+			AND is_return = 0
+			AND {condition}
+		ORDER BY posting_date DESC, posting_time DESC
+		LIMIT %(limit)s
+		""",
+		{"pos_profile": pos_profile, "tolerance": AMOUNT_TOLERANCE, "limit": limit},
+		as_dict=True,
+	)
+
+
+def _open_invoices_summary(pos_profile: str, condition: str) -> Dict:
+	summary = frappe.db.sql(
+		f"""
+		SELECT
+			COUNT(*) AS count,
+			COALESCE(SUM(outstanding_amount), 0) AS total_outstanding,
+			COALESCE(SUM(({AMOUNT_DUE_SQL}) - outstanding_amount), 0) AS total_paid,
+			COALESCE(SUM(grand_total), 0) AS total_grand_total
+		FROM `tabSales Invoice`
+		WHERE pos_profile = %(pos_profile)s
+			AND docstatus = 1
+			AND is_pos = 1
+			AND is_return = 0
+			AND {condition}
+		""",
+		{"pos_profile": pos_profile, "tolerance": AMOUNT_TOLERANCE},
+		as_dict=True,
+	)[0]
+	return {
+		"count": cint(summary.get("count")),
+		"total_outstanding": flt(summary.get("total_outstanding")),
+		"total_paid": flt(summary.get("total_paid")),
+		"total_grand_total": flt(summary.get("total_grand_total")),
+	}
+
+
 @frappe.whitelist()
 def get_partial_paid_invoices(pos_profile: str, limit: int = DEFAULT_INVOICE_LIMIT) -> List[Dict]:
 	"""
@@ -490,7 +551,8 @@ def get_partial_paid_invoices(pos_profile: str, limit: int = DEFAULT_INVOICE_LIM
 
 	A partially paid invoice has:
 	- Outstanding amount > 0 (not fully paid)
-	- Paid amount > 0 (not fully unpaid)
+	- Outstanding amount below the amount due (something was paid, at checkout
+	  or later through a Payment Entry)
 	- Can be in any status including "Overdue"
 
 	Args:
@@ -525,35 +587,8 @@ def get_partial_paid_invoices(pos_profile: str, limit: int = DEFAULT_INVOICE_LIM
 
 	# Get partially paid invoices using ORM
 	# Filter logic: outstanding > 0 AND paid > 0 (mathematical definition of partial payment)
-	invoices = frappe.get_all(
-		"Sales Invoice",
-		filters={
-			"pos_profile": pos_profile,
-			"docstatus": 1,
-			"is_pos": 1,
-			"outstanding_amount": [">", 0],
-			"paid_amount": [">", 0],
-			"is_return": 0,
-		},
-		fields=[
-			"name",
-			"customer",
-			"customer_name",
-			"posting_date",
-			"posting_time",
-			"grand_total",
-			"paid_amount",
-			"outstanding_amount",
-			"status",
-			"creation",
-			"currency",
-		],
-		order_by="posting_date desc, posting_time desc",
-		limit=limit,
-	)
+	invoices = _open_invoices(pos_profile, PARTLY_PAID_SQL, limit)
 
-	# Enrich with payment history
-	# Note: This makes additional queries. For summary-only views, use get_partial_payment_summary() instead.
 	for invoice in invoices:
 		enrich_invoice_with_payment_history(invoice, include_metadata=True)
 
@@ -566,8 +601,8 @@ def get_unpaid_invoices(pos_profile: str, limit: int = DEFAULT_INVOICE_LIMIT) ->
 	Get all unpaid invoices (partial + fully unpaid) for a POS Profile.
 
 	Includes:
-	- Fully unpaid invoices (paid_amount = 0)
-	- Partially paid invoices (0 < paid_amount < grand_total)
+	- Fully unpaid invoices
+	- Partially paid invoices (at checkout or later through a Payment Entry)
 	- Overdue invoices (any invoice with outstanding > 0)
 
 	Args:
@@ -600,33 +635,8 @@ def get_unpaid_invoices(pos_profile: str, limit: int = DEFAULT_INVOICE_LIMIT) ->
 		limit = MAX_INVOICE_LIMIT
 
 	# Get all unpaid invoices (any invoice with outstanding > 0)
-	invoices = frappe.get_all(
-		"Sales Invoice",
-		filters={
-			"pos_profile": pos_profile,
-			"docstatus": 1,
-			"is_pos": 1,
-			"outstanding_amount": [">", 0],
-			"is_return": 0,
-		},
-		fields=[
-			"name",
-			"customer",
-			"customer_name",
-			"posting_date",
-			"posting_time",
-			"grand_total",
-			"paid_amount",
-			"outstanding_amount",
-			"status",
-			"creation",
-			"currency",
-		],
-		order_by="posting_date desc, posting_time desc",
-		limit=limit,
-	)
+	invoices = _open_invoices(pos_profile, OPEN_INVOICE_SQL, limit)
 
-	# Enrich with payment history
 	for invoice in invoices:
 		enrich_invoice_with_payment_history(invoice, include_metadata=True)
 
@@ -836,7 +846,7 @@ def get_partial_payment_summary(pos_profile: str) -> Dict:
 	    dict: {
 	        'count': Number of partially paid invoices,
 	        'total_outstanding': Sum of outstanding amounts,
-	        'total_paid': Sum of paid amounts,
+	        'total_paid': Sum of amounts paid so far (checkout and later payments),
 	        'total_grand_total': Sum of invoice totals
 	    }
 
@@ -857,31 +867,7 @@ def get_partial_payment_summary(pos_profile: str) -> Dict:
 
 	# Use direct SQL aggregation - single query instead of N queries
 	# This is critical for performance with large datasets
-	summary = frappe.db.sql(
-		"""
-        SELECT
-            COUNT(*) as count,
-            COALESCE(SUM(outstanding_amount), 0) as total_outstanding,
-            COALESCE(SUM(paid_amount), 0) as total_paid,
-            COALESCE(SUM(grand_total), 0) as total_grand_total
-        FROM `tabSales Invoice`
-        WHERE pos_profile = %(pos_profile)s
-            AND docstatus = 1
-            AND is_pos = 1
-            AND outstanding_amount > 0
-            AND paid_amount > 0
-            AND is_return = 0
-        """,
-		{"pos_profile": pos_profile},
-		as_dict=True,
-	)[0]
-
-	return {
-		"count": cint(summary.get("count")),
-		"total_outstanding": flt(summary.get("total_outstanding")),
-		"total_paid": flt(summary.get("total_paid")),
-		"total_grand_total": flt(summary.get("total_grand_total")),
-	}
+	return _open_invoices_summary(pos_profile, PARTLY_PAID_SQL)
 
 
 @frappe.whitelist()
@@ -899,7 +885,7 @@ def get_unpaid_summary(pos_profile: str) -> Dict:
 	    dict: {
 	        'count': Number of unpaid invoices,
 	        'total_outstanding': Sum of outstanding amounts,
-	        'total_paid': Sum of paid amounts,
+	        'total_paid': Sum of amounts paid so far (checkout and later payments),
 	        'total_grand_total': Sum of invoice totals
 	    }
 
@@ -919,30 +905,7 @@ def get_unpaid_summary(pos_profile: str) -> Dict:
 		frappe.throw(_("You don't have access to this POS Profile"))
 
 	# Use direct SQL aggregation - critical for performance
-	summary = frappe.db.sql(
-		"""
-        SELECT
-            COUNT(*) as count,
-            COALESCE(SUM(outstanding_amount), 0) as total_outstanding,
-            COALESCE(SUM(paid_amount), 0) as total_paid,
-            COALESCE(SUM(grand_total), 0) as total_grand_total
-        FROM `tabSales Invoice`
-        WHERE pos_profile = %(pos_profile)s
-            AND docstatus = 1
-            AND is_pos = 1
-            AND outstanding_amount > 0
-            AND is_return = 0
-        """,
-		{"pos_profile": pos_profile},
-		as_dict=True,
-	)[0]
-
-	return {
-		"count": cint(summary.get("count")),
-		"total_outstanding": flt(summary.get("total_outstanding")),
-		"total_paid": flt(summary.get("total_paid")),
-		"total_grand_total": flt(summary.get("total_grand_total")),
-	}
+	return _open_invoices_summary(pos_profile, OPEN_INVOICE_SQL)
 
 
 # ==========================================
