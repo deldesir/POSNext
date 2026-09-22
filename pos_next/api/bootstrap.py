@@ -66,6 +66,7 @@ def get_initial_data():
 		"locale": _get_user_language(),
 		"precision": _get_precision_settings(),
 		"system_timezone": get_system_timezone(),
+		"print_settings": _get_print_settings(),
 		"can_switch_to_desk": "Nexus POS Manager" in frappe.get_roles(),
 		"shift": None,
 		"pos_profile": None,
@@ -99,6 +100,7 @@ def get_initial_data():
 		"write_off_cost_center": pos_profile.write_off_cost_center,
 		"write_off_limit": pos_profile.write_off_limit or 0,
 		"print_format": pos_profile.get("print_format"),
+		"letter_head": pos_profile.get("letter_head"),
 		"auto_print": pos_profile.get("print_receipt_on_order_complete", 0),
 		"country": pos_profile.get("country"),
 		"ignore_pricing_rule": pos_profile.ignore_pricing_rule or 0,
@@ -148,6 +150,13 @@ def _get_user_language():
 	"""
 	lang = frappe.db.get_value("User", frappe.session.user, "language")
 	return (lang or "en").lower()
+
+
+def _get_print_settings():
+	"""Print Settings the receipt honours, for receipts rendered in the browser (offline)."""
+	return {
+		"print_uom_after_quantity": frappe.db.get_single_value("Print Settings", "print_uom_after_quantity") or 0,
+	}
 
 
 def _get_precision_settings():

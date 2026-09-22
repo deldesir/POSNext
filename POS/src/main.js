@@ -187,6 +187,13 @@ async function initializeApp() {
 					initPrecision(bootstrapStore.getPreloadedPrecision());
 					log.debug("Precision settings initialized from bootstrap");
 
+					// Receipt options (UOM after quantity) and the profile's print format
+					const { configureReceipt, rememberProfilePrintSettings } = await import(
+						"./utils/printInvoice"
+					);
+					configureReceipt(bootstrapStore.getPreloadedPrintSettings());
+					rememberProfilePrintSettings(bootstrapStore.getPreloadedPOSProfile());
+
 					// Initialize Socket.IO with correct site name from bootstrap
 					if (typeof window !== "undefined") {
 						if (!window.frappe) window.frappe = {};

@@ -119,6 +119,13 @@ export const useBootstrapStore = defineStore("bootstrap", () => {
 	}
 
 	/**
+	 * Get preloaded receipt-related Print Settings or null if not available
+	 */
+	function getPreloadedPrintSettings() {
+		return data.value?.print_settings || null;
+	}
+
+	/**
 	 * Get preloaded precision settings or defaults if not available
 	 * Settings from Date and Number Format section in System Settings
 	 * @returns {{ currency: number, float: number, rounding_method: string, number_format: string }}
@@ -166,6 +173,7 @@ export const useBootstrapStore = defineStore("bootstrap", () => {
 		getPreloadedPOSSettings,
 		getPreloadedPaymentMethods,
 		getPreloadedPrecision,
+		getPreloadedPrintSettings,
 		hasBootstrapData,
 		reset,
 		getSiteName,
