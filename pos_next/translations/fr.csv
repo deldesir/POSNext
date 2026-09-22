@@ -9,6 +9,8 @@
 "Return of","Retour de","POS Receipt"
 "Cashier","Caissier","POS Receipt"
 "Customer","Client","POS Receipt"
+"Sales Person","Vendeur","POS Receipt"
+"Coupon","Coupon","POS Receipt"
 "Item","Article","POS Receipt"
 "Amount","Montant","POS Receipt"
 "Free","Gratuit","POS Receipt"

@@ -116,6 +116,19 @@ describe("buildReceiptHTML", () => {
 		expect(text(buildReceiptHTML(credit))).toMatch(/Balance Due \S* ?400\.00/);
 	});
 
+	it("prints the sales team and coupon when present", () => {
+		const out = text(
+			buildReceiptHTML({
+				...sale,
+				sales_team: [{ sales_person: "SP-1", sales_person_name: "Ana" }, { sales_person: "Ben" }],
+				coupon_code: "WELCOME10",
+			}),
+		);
+		expect(out).toContain("Sales Person Ana, Ben");
+		expect(out).toContain("Coupon WELCOME10");
+		expect(text(buildReceiptHTML(sale))).not.toContain("Sales Person");
+	});
+
 	it("escapes names coming from the database", () => {
 		const html = buildReceiptHTML({ ...sale, customer_name: "<b>x</b>", items: [{ ...sale.items[2], item_name: "A & B <i>" }] });
 		expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");

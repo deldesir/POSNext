@@ -29,6 +29,16 @@ function derivePaidAmount(invoiceData) {
 	return invoiceData.payments.reduce((sum, p) => sum + (Number.parseFloat(p.amount) || 0), 0);
 }
 
+/** "Name, Name" of the invoice's sales team, or "" (upstream: sales person on receipts). */
+function getSalesPersonNames(invoiceData) {
+	const salesTeam = invoiceData.sales_team;
+	if (!Array.isArray(salesTeam) || salesTeam.length === 0) return "";
+	return salesTeam
+		.map((row) => row.sales_person_name || row.sales_person)
+		.filter(Boolean)
+		.join(", ");
+}
+
 /** Sales Invoices not yet on the server (offline queue / local receipt id). */
 export function isLocalOnlyInvoiceName(name) {
 	return (
@@ -68,6 +78,8 @@ function receiptDocFromQueuedInvoice(offlineId, raw) {
 		posting_date: raw.posting_date || new Date().toISOString().slice(0, 10),
 		company: raw.company,
 		customer_name: raw.customer,
+		sales_team: raw.sales_team,
+		coupon_code: raw.coupon_code,
 		items: items.map((item) => ({
 			...item,
 			quantity: item.quantity ?? item.qty,
@@ -271,6 +283,7 @@ export function buildReceiptHTML(invoiceData) {
 	const change = num(invoiceData.change_amount);
 	const outstanding = num(invoiceData.outstanding_amount);
 	const customer = invoiceData.customer_name || invoiceData.customer;
+	const salesPersonNames = getSalesPersonNames(invoiceData);
 	const postedAt = invoiceData.posting_date
 		? `${invoiceData.posting_date}${
 				invoiceData.posting_time ? ` ${String(invoiceData.posting_time).slice(0, 5)}` : ""
@@ -295,6 +308,8 @@ export function buildReceiptHTML(invoiceData) {
 					: ""
 			}
 			${customer ? receiptLine(t("Customer"), escapeHTML(customer), "pnr-meta") : ""}
+			${salesPersonNames ? receiptLine(t("Sales Person"), escapeHTML(salesPersonNames), "pnr-meta") : ""}
+			${invoiceData.coupon_code ? receiptLine(t("Coupon"), escapeHTML(invoiceData.coupon_code), "pnr-meta") : ""}
 
 			<div class="pnr-rule"></div>
 
