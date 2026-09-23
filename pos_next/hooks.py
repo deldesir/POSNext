@@ -156,6 +156,7 @@ doc_events = {
 		"validate": [
 			"pos_next.api.sales_invoice_hooks.validate",
 			"pos_next.api.wallet.validate_wallet_payment",
+			"pos_next.api.uom_guard.validate_conversion_factors",
 		],
 		"before_submit": "pos_next.authorization.gate.enforce_document",
 		"before_cancel": "pos_next.api.sales_invoice_hooks.before_cancel",
@@ -170,6 +171,13 @@ doc_events = {
 		],
 		"after_insert": "pos_next.realtime_events.emit_invoice_created_event",
 	},
+	# Every stock-moving transaction: a line's conversion factor must be the one the item defines
+	"Purchase Order": {"validate": "pos_next.api.uom_guard.validate_conversion_factors"},
+	"Purchase Receipt": {"validate": "pos_next.api.uom_guard.validate_conversion_factors"},
+	"Purchase Invoice": {"validate": "pos_next.api.uom_guard.validate_conversion_factors"},
+	"Sales Order": {"validate": "pos_next.api.uom_guard.validate_conversion_factors"},
+	"Delivery Note": {"validate": "pos_next.api.uom_guard.validate_conversion_factors"},
+	"Stock Entry": {"validate": "pos_next.api.uom_guard.validate_conversion_factors"},
 	"POS Profile": {"on_update": "pos_next.realtime_events.emit_pos_profile_updated_event"},
 	"Mode of Payment": {
 		"after_insert": "pos_next.api.wallet.clear_wallet_payment_modes_cache",
