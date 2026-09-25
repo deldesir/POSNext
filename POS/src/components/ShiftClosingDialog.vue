@@ -152,6 +152,26 @@
 								</div>
 							</div>
 
+							<!-- Received on account: later payments taken this shift on
+							     invoices checked out earlier (already inside Collected) -->
+							<div
+								v-if="hasPaymentsReceived"
+								class="text-start bg-teal-50 border border-teal-200 rounded-lg p-3 md:p-4"
+							>
+								<div class="text-teal-600 text-xs uppercase font-medium mb-1">
+									{{ __("Received on Account") }}
+								</div>
+								<div
+									class="text-lg md:text-2xl font-bold text-teal-900 mb-0.5 md:mb-1 truncate"
+								>
+									{{ formatCurrency(closingData.payments_received_total) }}
+								</div>
+								<div class="text-teal-600 text-xs">
+									{{ __("{0} receipts", [closingData.payments_received_count]) }}
+									· {{ __("Included in Collected") }}
+								</div>
+							</div>
+
 							<!-- On Account (invoiced but not collected) -->
 							<div
 								v-if="outstandingTotal > 0"
@@ -582,6 +602,86 @@
 										</td>
 										<td class="px-4 py-3 text-sm text-gray-600 text-start">
 											{{ expense.remarks || __("N/A") }}
+										</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+
+					<!-- Payments received on account -->
+					<div
+						v-if="hasPaymentsReceived"
+						class="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm"
+					>
+						<div class="px-3 py-3 md:px-6 md:py-4 border-b border-gray-200 bg-teal-50">
+							<h3 class="text-sm md:text-lg font-semibold text-gray-900 text-start">
+								{{ __("Payments Received") }}
+							</h3>
+							<p class="text-xs md:text-sm text-gray-600 text-start">
+								{{
+									__(
+										"{0} receipts totaling {1}",
+										[
+											closingData.payments_received_count,
+											formatCurrency(closingData.payments_received_total),
+										]
+									)
+								}}
+							</p>
+						</div>
+						<div class="overflow-x-auto">
+							<table class="min-w-full divide-y divide-gray-200">
+								<thead class="bg-gray-50">
+									<tr>
+										<th
+											class="px-4 py-3 text-start text-xs font-medium text-gray-500 uppercase"
+										>
+											{{ __("Payment Entry") }}
+										</th>
+										<th
+											class="px-4 py-3 text-start text-xs font-medium text-gray-500 uppercase"
+										>
+											{{ __("Invoice") }}
+										</th>
+										<th
+											class="px-4 py-3 text-start text-xs font-medium text-gray-500 uppercase"
+										>
+											{{ __("Customer") }}
+										</th>
+										<th
+											class="px-4 py-3 text-start text-xs font-medium text-gray-500 uppercase"
+										>
+											{{ __("Mode of Payment") }}
+										</th>
+										<th
+											class="px-4 py-3 text-start text-xs font-medium text-gray-500 uppercase"
+										>
+											{{ __("Amount") }}
+										</th>
+									</tr>
+								</thead>
+								<tbody class="divide-y divide-gray-200">
+									<tr
+										v-for="(receipt, idx) in closingData.pos_payments"
+										:key="receipt.payment_entry || idx"
+									>
+										<td class="px-4 py-3 text-sm text-gray-900 text-start">
+											{{ receipt.payment_entry }}
+										</td>
+										<td class="px-4 py-3 text-sm text-gray-900 text-start">
+											{{ receipt.sales_invoice || __("N/A") }}
+										</td>
+										<td class="px-4 py-3 text-sm text-gray-600 text-start">
+											{{ receipt.customer || __("N/A") }}
+										</td>
+										<td class="px-4 py-3 text-sm text-gray-600 text-start">
+											{{ receipt.mode_of_payment }}
+										</td>
+										<td
+											class="px-4 py-3 text-sm font-semibold text-teal-800 text-start"
+										>
+											{{ formatCurrency(receipt.paid_amount) }}
 										</td>
 									</tr>
 								</tbody>
@@ -1433,6 +1533,14 @@ const hasReturns = computed(() => {
 const hasExpenses = computed(() => {
 	if (!closingData.value) return false;
 	return (closingData.value.expenses_count || 0) > 0;
+});
+
+// Receipts taken this shift on invoices checked out earlier (Partial
+// Payments / Unpaid screens).  The money is in the drawer, so the server
+// already folds it into Collected and into each mode's expected amount.
+const hasPaymentsReceived = computed(() => {
+	if (!closingData.value) return false;
+	return (closingData.value.payments_received_count || 0) > 0;
 });
 
 const netCashImpact = computed(() => {

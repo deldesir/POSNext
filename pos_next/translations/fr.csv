@@ -28,3 +28,8 @@
 "Balance Due","Reste à payer","POS Receipt"
 "Thank you for your business!","Merci de votre confiance !","POS Receipt"
 "Offline, pending sync","Hors ligne, en attente de synchronisation","POS Receipt"
+"Received on Account","Encaissé sur compte",""
+"{0} receipts","{0} encaissements",""
+"Payments Received","Encaissements",""
+"{0} receipts totaling {1}","{0} encaissements totalisant {1}",""
+"Included in Collected","Compris dans Encaissé",""

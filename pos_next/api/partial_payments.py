@@ -53,6 +53,51 @@ MAX_INVOICE_LIMIT = 500
 # Default payment account types
 DEFAULT_PAYMENT_MODE = "Cash"
 
+# Custom field (pos_next/custom/payment_entry.json) that ties a receipt taken at
+# the POS to the shift whose drawer received it.  The closing shift reads it
+# back to count the money; without it a later payment on an invoice reached
+# ERPNext but never any shift's cash-up.
+SHIFT_FIELD = "posa_pos_opening_shift"
+
+
+def _shift_field_available() -> bool:
+	return bool(frappe.db.has_column("Payment Entry", SHIFT_FIELD))
+
+
+def get_session_open_shift(user: str | None = None) -> str | None:
+	"""Name of the POS Opening Shift ``user`` is currently running, if any."""
+	user = user or frappe.session.user
+	rows = frappe.get_all(
+		"POS Opening Shift",
+		filters={
+			"user": user,
+			"docstatus": 1,
+			"status": "Open",
+			"pos_closing_shift": ["is", "not set"],
+		},
+		order_by="period_start_date desc",
+		limit=1,
+		pluck="name",
+	)
+	return rows[0] if rows else None
+
+
+def resolve_pos_opening_shift(pos_opening_shift: str | None = None) -> str | None:
+	"""Return the shift a POS receipt belongs to.
+
+	An explicit shift must exist and still be open; otherwise the session
+	user's open shift is used.  ``None`` means the payment was not taken at a
+	till (back office) and stays out of every shift's cash-up.
+	"""
+	if pos_opening_shift:
+		row = frappe.db.get_value(
+			"POS Opening Shift", pos_opening_shift, ["status", "docstatus"], as_dict=True
+		)
+		if not row or cint(row.docstatus) != 1 or row.status != "Open":
+			frappe.throw(_("POS Opening Shift {0} is not open").format(pos_opening_shift))
+		return pos_opening_shift
+	return get_session_open_shift()
+
 
 # ==========================================
 # Payment Tracking - ORM Based with Performance Optimization
@@ -346,6 +391,7 @@ def create_payment_entry(
 	reference_no: Optional[str] = None,
 	remarks: Optional[str] = None,
 	posting_date: Optional[str] = None,
+	pos_opening_shift: str | None = None,
 ) -> str:
 	"""
 	Create a proper Payment Entry that updates Payment Ledger.
@@ -369,6 +415,8 @@ def create_payment_entry(
 	    reference_no: Optional reference number
 	    remarks: Optional remarks
 	    posting_date: Optional posting date (defaults to today)
+	    pos_opening_shift: Shift whose drawer receives the money; defaults to
+	        the session user's open shift (see resolve_pos_opening_shift)
 
 	Returns:
 	    str: Created Payment Entry name
@@ -419,6 +467,8 @@ def create_payment_entry(
 	if not frappe.db.exists("Mode of Payment", mode_of_payment):
 		frappe.throw(_("Mode of Payment {0} does not exist").format(mode_of_payment))
 
+	pos_opening_shift = resolve_pos_opening_shift(pos_opening_shift)
+
 	# Save and submit with proper error handling
 	try:
 		from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
@@ -458,6 +508,9 @@ def create_payment_entry(
 		else:
 			pe.remarks = f"Payment for {invoice_name} via POS - {mode_of_payment}"
 
+		if pos_opening_shift and _shift_field_available():
+			pe.set(SHIFT_FIELD, pos_opening_shift)
+
 		# Allow system to create payment entry even if user doesn't have direct permission
 		# This is safe because we've already validated invoice access
 		pe.flags.ignore_permissions = True
@@ -485,7 +538,9 @@ def create_payment_entry(
 
 # The amount the customer owes on an invoice: the rounded total when rounding is
 # on, else the grand total. outstanding_amount is maintained against this figure.
-AMOUNT_DUE_SQL = "CASE WHEN disable_rounded_total = 0 AND rounded_total <> 0 THEN rounded_total ELSE grand_total END"
+AMOUNT_DUE_SQL = (
+	"CASE WHEN disable_rounded_total = 0 AND rounded_total <> 0 THEN rounded_total ELSE grand_total END"
+)
 
 # Conditions written against the ledger-maintained outstanding_amount rather than
 # paid_amount: paid_amount only holds what was taken at checkout, so an invoice
@@ -710,7 +765,7 @@ def get_partial_payment_details(invoice_name: str) -> Dict:
 
 
 @frappe.whitelist()
-def add_payment_to_partial_invoice(invoice_name: str, payments) -> Dict:
+def add_payment_to_partial_invoice(invoice_name: str, payments, pos_opening_shift: str | None = None) -> Dict:
 	"""
 	Add payments to a partially paid invoice via Payment Entry.
 
@@ -728,6 +783,8 @@ def add_payment_to_partial_invoice(invoice_name: str, payments) -> Dict:
 	        - account: (optional) Specific payment account
 	        - reference_no: (optional) Reference number
 	    Can also accept JSON string which will be parsed.
+	    pos_opening_shift: (optional) Shift taking the money; defaults to the
+	        session user's open shift so the closing shift can count it.
 
 	Returns:
 	    dict: Updated invoice details with created Payment Entry names
@@ -781,6 +838,9 @@ def add_payment_to_partial_invoice(invoice_name: str, payments) -> Dict:
 			)
 		)
 
+	# Resolved once: every entry of the batch lands in the same drawer.
+	pos_opening_shift = resolve_pos_opening_shift(pos_opening_shift)
+
 	# Create Payment Entries inside one savepoint-backed batch.
 	payment_entries_created = []
 	batch_savepoint = "partial_payment_batch"
@@ -809,6 +869,7 @@ def add_payment_to_partial_invoice(invoice_name: str, payments) -> Dict:
 				payment_account=payment_account,
 				reference_no=reference_no,
 				remarks=f"POS Payment - {mode_of_payment}",
+				pos_opening_shift=pos_opening_shift,
 			)
 
 			payment_entries_created.append(pe_name)
