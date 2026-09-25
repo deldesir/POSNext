@@ -16,8 +16,10 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt
 
 from pos_next.api import expenses
+from pos_next.pos_next.doctype.pos_closing_shift import pos_closing_shift as pcs
 from pos_next.pos_next.doctype.pos_closing_shift.pos_closing_shift import (
 	_process_invoice,
+	_process_payment_entries,
 	make_closing_shift_from_opening,
 )
 
@@ -69,6 +71,155 @@ def _empty_summary():
 		"collected_total": 0,
 		"outstanding_total": 0,
 	}
+
+
+def _payment_entry(name, amount, mode_of_payment="Cash", party="Test Customer"):
+	"""Minimal get_payments_entries() row."""
+	return frappe._dict(
+		{
+			"name": name,
+			"mode_of_payment": mode_of_payment,
+			"paid_amount": amount,
+			"base_paid_amount": amount,
+			"posting_date": "2026-06-12",
+			"party": party,
+		}
+	)
+
+
+class TestOnAccountReceipts(unittest.TestCase):
+	"""Payment Entries taken at the till after checkout reach the cash-up.
+
+	Money received later on an invoice (Partial Payments / Unpaid screens)
+	sits in the drawer: it must raise the mode's expected amount and the
+	shift's collected total, once, whether the invoice was sold in this
+	shift or an earlier one.
+	"""
+
+	def test_later_payment_moves_outstanding_to_collected_on_the_row(self):
+		summary = _empty_summary()
+		payments, taxes = [], []
+		partial = _invoice(
+			"INV-PARTIAL",
+			grand_total=300,
+			paid_amount=120,
+			payments=[frappe._dict({"mode_of_payment": "Cash", "amount": 120, "base_amount": 120})],
+		)
+
+		txn = _process_invoice(
+			partial, "sales_invoice", "USD", "Cash", payments, taxes, summary, later_payments=100
+		)
+
+		self.assertEqual(txn["collected_amount"], 220)
+		self.assertEqual(txn["outstanding_amount"], 80)
+		self.assertEqual(summary["collected_total"], 220)
+		self.assertEqual(summary["outstanding_total"], 80)
+		# The bucket only holds the checkout row; the Payment Entry adds its own.
+		cash = next(p for p in payments if p.mode_of_payment == "Cash")
+		self.assertEqual(cash.expected_amount, 120)
+
+	def test_later_payment_never_drives_outstanding_negative(self):
+		summary = _empty_summary()
+		txn = _process_invoice(
+			_invoice("INV-ROUND", grand_total=100, paid_amount=99),
+			"sales_invoice",
+			"USD",
+			"Cash",
+			[],
+			[],
+			summary,
+			later_payments=1.5,
+		)
+		self.assertEqual(txn["outstanding_amount"], 0)
+		self.assertEqual(txn["collected_amount"], 100.5)
+
+	def test_returns_ignore_later_payments(self):
+		summary = _empty_summary()
+		refund = _invoice(
+			"INV-RET",
+			grand_total=-50,
+			paid_amount=-50,
+			is_return=1,
+			payments=[frappe._dict({"mode_of_payment": "Cash", "amount": -50, "base_amount": -50})],
+		)
+		txn = _process_invoice(refund, "sales_invoice", "USD", "Cash", [], [], summary, later_payments=20)
+		self.assertEqual(txn["collected_amount"], -50)
+		self.assertEqual(txn["outstanding_amount"], 0)
+
+	def test_receipts_raise_expected_and_collected_once(self):
+		summary = _empty_summary()
+		summary.update({"payments_received_total": 0, "payments_received_count": 0})
+		payments, taxes = [], []
+
+		# Sold this shift on credit (300, nothing at checkout) and paid down
+		# 100 later in the same shift.
+		credit = _invoice("INV-THIS-SHIFT", grand_total=300, paid_amount=0)
+		_process_invoice(credit, "sales_invoice", "USD", "Cash", payments, taxes, summary, later_payments=100)
+		self.assertEqual(summary["collected_total"], 100)
+
+		entries = [
+			_payment_entry("PE-SAME", 100),  # against INV-THIS-SHIFT
+			_payment_entry("PE-OLD", 250, mode_of_payment="Card"),  # against last week's invoice
+		]
+		allocations = {"INV-THIS-SHIFT": 100, "INV-LAST-WEEK": 250}
+		invoices_by_entry = {"PE-SAME": ["INV-THIS-SHIFT"], "PE-OLD": ["INV-LAST-WEEK"]}
+
+		rows = _process_payment_entries(
+			entries, payments, summary, allocations, {"INV-THIS-SHIFT"}, invoices_by_entry
+		)
+
+		# Every receipt feeds its mode's expected amount.
+		cash = next(p for p in payments if p.mode_of_payment == "Cash")
+		card = next(p for p in payments if p.mode_of_payment == "Card")
+		self.assertEqual(cash.expected_amount, 100)
+		self.assertEqual(card.expected_amount, 250)
+
+		# Collected = 100 (already on the invoice row) + 250 (older invoice); the
+		# same-shift receipt is not counted twice.
+		self.assertEqual(summary["collected_total"], 350)
+		self.assertEqual(summary["outstanding_total"], 200)
+		self.assertEqual(summary["payments_received_total"], 350)
+		self.assertEqual(summary["payments_received_count"], 2)
+
+		# Rows carry what the closing dialog shows.
+		self.assertEqual([r["payment_entry"] for r in rows], ["PE-SAME", "PE-OLD"])
+		self.assertEqual(rows[0]["sales_invoice"], "INV-THIS-SHIFT")
+		self.assertEqual(rows[1]["customer"], "Test Customer")
+		self.assertEqual(rows[1]["base_amount"], 250)
+
+	def test_no_receipts_leaves_summary_untouched(self):
+		summary = _empty_summary()
+		rows = _process_payment_entries([], [], summary, {}, set())
+		self.assertEqual(rows, [])
+		self.assertEqual(summary["collected_total"], 0)
+		self.assertEqual(summary["payments_received_total"], 0)
+		self.assertEqual(summary["payments_received_count"], 0)
+
+	def test_get_payments_entries_matches_the_shift_tag_and_the_reference(self):
+		from unittest.mock import MagicMock, patch
+
+		db = MagicMock()
+		db.has_column.return_value = True
+		with (
+			patch.object(pcs.frappe, "db", db),
+			patch.object(pcs.frappe, "get_all", return_value=[]) as get_all,
+		):
+			pcs.get_payments_entries("POSA-OS-26-0000001")
+		kwargs = get_all.call_args.kwargs
+		self.assertEqual(kwargs["filters"], {"docstatus": 1, "payment_type": "Receive"})
+		self.assertIn(["reference_no", "=", "POSA-OS-26-0000001"], kwargs["or_filters"])
+		self.assertIn(["posa_pos_opening_shift", "=", "POSA-OS-26-0000001"], kwargs["or_filters"])
+
+		# Before the custom field is synced only the reference convention applies.
+		db.has_column.return_value = False
+		with (
+			patch.object(pcs.frappe, "db", db),
+			patch.object(pcs.frappe, "get_all", return_value=[]) as get_all,
+		):
+			pcs.get_payments_entries("POSA-OS-26-0000001")
+		self.assertEqual(
+			get_all.call_args.kwargs["or_filters"], [["reference_no", "=", "POSA-OS-26-0000001"]]
+		)
 
 
 class TestPOSClosingShift(unittest.TestCase):

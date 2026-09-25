@@ -84,6 +84,36 @@
 				</div>
 				<!-- Section end -->
 
+				<!-- Payments received section -->
+				{% if data.pos_payments %}
+				<div>
+						<h6 class="text-center uppercase" style="color: #8D99A6">{{ _("Payments Received") }}</h6>
+						<div class="tax-break-up" style="overflow-x: auto;">
+							<table class="table table-bordered table-hover">
+								<thead>
+									<tr>
+										<th class="text-left">{{ _("Payment Entry") }}</th>
+										<th class="text-left">{{ _("Customer") }}</th>
+										<th class="text-left">{{ _("Mode of Payment") }}</th>
+										<th class="text-right">{{ _("Amount") }}</th>
+									</tr>
+								</thead>
+								<tbody>
+								{% for d in data.pos_payments %}
+									<tr>
+										<td class="text-left">{{ d.payment_entry }}</td>
+										<td class="text-left">{{ d.customer or '' }}</td>
+										<td class="text-left">{{ d.mode_of_payment or '' }}</td>
+										<td class='text-right'>{{ frappe.utils.fmt_money(d.paid_amount, currency=currency) }}</td>
+									</tr>
+								{% endfor %}
+								</tbody>
+							</table>
+						</div>
+				</div>
+				{% endif %}
+				<!-- Section end -->
+
 				<!-- Taxes section -->
 				{% if data.taxes %}
 				<div>

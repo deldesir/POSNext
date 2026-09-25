@@ -372,15 +372,30 @@ def get_pos_invoices(pos_opening_shift, doctype=None):
 	return data
 
 
+# Custom field on Payment Entry (pos_next/custom/payment_entry.json) set by
+# pos_next.api.partial_payments when a receipt is taken at a till.
+PAYMENT_ENTRY_SHIFT_FIELD = "posa_pos_opening_shift"
+
+
 @frappe.whitelist()
 def get_payments_entries(pos_opening_shift):
+	"""Submitted receipts whose money went into this shift's drawer.
+
+	POS Next tags the Payment Entries it creates with the cashier's open
+	shift; the older convention of writing the shift name into
+	``reference_no`` is still honoured for entries made from the desk.
+	"""
+	or_filters = [["reference_no", "=", pos_opening_shift]]
+	if frappe.db.has_column("Payment Entry", PAYMENT_ENTRY_SHIFT_FIELD):
+		or_filters.append([PAYMENT_ENTRY_SHIFT_FIELD, "=", pos_opening_shift])
+
 	return frappe.get_all(
 		"Payment Entry",
 		filters={
 			"docstatus": 1,
-			"reference_no": pos_opening_shift,
 			"payment_type": "Receive",
 		},
+		or_filters=or_filters,
 		fields=[
 			"name",
 			"mode_of_payment",
@@ -391,7 +406,73 @@ def get_payments_entries(pos_opening_shift):
 			"posting_date",
 			"party",
 		],
+		order_by="posting_date asc, creation asc",
 	)
+
+
+def _allocations_by_invoice(payment_entries):
+	"""Company-currency amount the receipts allocated to each Sales Invoice."""
+	names = [py.name for py in payment_entries if py.get("name")]
+	if not names:
+		return {}, {}
+
+	rate_by_entry = {}
+	for py in payment_entries:
+		paid = flt(py.get("paid_amount"))
+		rate_by_entry[py.name] = flt(py.get("base_paid_amount")) / paid if paid else 1
+
+	allocated = defaultdict(float)
+	invoices_by_entry = defaultdict(list)
+	for ref in frappe.get_all(
+		"Payment Entry Reference",
+		filters={"parent": ["in", names], "reference_doctype": "Sales Invoice"},
+		fields=["parent", "reference_name", "allocated_amount"],
+		order_by="parent, idx",
+	):
+		allocated[ref.reference_name] += flt(ref.allocated_amount) * rate_by_entry.get(ref.parent, 1)
+		invoices_by_entry[ref.parent].append(ref.reference_name)
+
+	return allocated, invoices_by_entry
+
+
+def _process_payment_entries(
+	payment_entries, payments, summary, allocations, shift_invoices, invoices_by_entry=None
+):
+	"""Fold on-account receipts into the reconciliation buckets and the summary.
+
+	Each receipt raises the expected amount of its mode of payment and the
+	shift's collected total.  Money already shown on one of this shift's own
+	invoice rows (a same-shift sale paid down later, see ``later_payments`` in
+	``_process_invoice``) is not counted a second time.
+	"""
+	invoices_by_entry = invoices_by_entry or {}
+	rows = []
+	received_total = 0
+	for py in payment_entries:
+		base_amount = get_base_value(py, "paid_amount", "base_paid_amount")
+		rows.append(
+			frappe._dict(
+				{
+					"payment_entry": py.name,
+					"mode_of_payment": py.mode_of_payment,
+					"paid_amount": py.paid_amount,
+					"posting_date": py.posting_date,
+					"customer": py.party,
+					# Display-only: which invoice(s) the money settled.
+					"sales_invoice": ", ".join(invoices_by_entry.get(py.name, [])),
+					"base_amount": base_amount,
+				}
+			)
+		)
+		_aggregate_payment(payments, py.mode_of_payment, base_amount)
+		received_total += base_amount
+
+	already_on_rows = sum(amount for invoice, amount in allocations.items() if invoice in shift_invoices)
+
+	summary["payments_received_total"] = summary.get("payments_received_total", 0) + received_total
+	summary["payments_received_count"] = summary.get("payments_received_count", 0) + len(rows)
+	summary["collected_total"] = summary.get("collected_total", 0) + received_total - already_on_rows
+	return rows
 
 
 def _get_cash_mode_of_payment(pos_profile):
@@ -434,8 +515,17 @@ def _aggregate_tax(taxes, account_head, rate, amount):
 	)
 
 
-def _process_invoice(invoice, invoice_field, company_currency, cash_mode, payments, taxes, summary):
-	"""Process a single invoice and update aggregates."""
+def _process_invoice(
+	invoice, invoice_field, company_currency, cash_mode, payments, taxes, summary, later_payments=0
+):
+	"""Process a single invoice and update aggregates.
+
+	``later_payments`` is the company-currency amount received on this
+	invoice during the same shift through Payment Entries (Partial Payments /
+	Unpaid screens) after it was checked out.  It moves from outstanding to
+	collected on the row; the reconciliation buckets get it from the Payment
+	Entry itself.
+	"""
 	conversion_rate = invoice.get("conversion_rate")
 	is_return = invoice.get("is_return", 0)
 
@@ -474,8 +564,9 @@ def _process_invoice(invoice, invoice_field, company_currency, cash_mode, paymen
 	# replacing them: grand_total / net_total / taxes stay invoiced so they
 	# keep tying to the GL and to every existing report, while
 	# collected_amount / outstanding_total answer "what is in the drawer".
-	collected = base_grand_total if is_return else base_paid
-	outstanding = 0 if is_return else (base_grand_total - base_paid)
+	later_payments = 0 if is_return else flt(later_payments)
+	collected = base_grand_total if is_return else base_paid + later_payments
+	outstanding = 0 if is_return else max(base_grand_total - base_paid - later_payments, 0)
 
 	# Build transaction record
 	transaction = frappe._dict(
@@ -587,6 +678,8 @@ def make_closing_shift_from_opening(opening_shift):
 		"sales_count": 0,
 		"collected_total": 0,
 		"outstanding_total": 0,
+		"payments_received_total": 0,
+		"payments_received_count": 0,
 	}
 
 	# Add opening balances to payments
@@ -602,28 +695,36 @@ def make_closing_shift_from_opening(opening_shift):
 			)
 		)
 
+	# Receipts taken during the shift on earlier invoices (Partial Payments /
+	# Unpaid screens).  Fetched before the invoices so a sale made and paid
+	# down in the same shift shows the money on its own row.
+	payment_entries = get_payments_entries(opening_shift.get("name"))
+	allocations, invoices_by_entry = _allocations_by_invoice(payment_entries)
+
 	# Process invoices
 	invoices = get_pos_invoices(opening_shift.get("name"), doctype)
 	for invoice in invoices:
-		txn = _process_invoice(invoice, invoice_field, company_currency, cash_mode, payments, taxes, summary)
+		txn = _process_invoice(
+			invoice,
+			invoice_field,
+			company_currency,
+			cash_mode,
+			payments,
+			taxes,
+			summary,
+			later_payments=allocations.get(invoice.name, 0),
+		)
 		pos_transactions.append(txn)
 
 	# Process payment entries
-	pos_payments_table = []
-	for py in get_payments_entries(opening_shift.get("name")):
-		pos_payments_table.append(
-			frappe._dict(
-				{
-					"payment_entry": py.name,
-					"mode_of_payment": py.mode_of_payment,
-					"paid_amount": py.paid_amount,
-					"posting_date": py.posting_date,
-					"customer": py.party,
-				}
-			)
-		)
-		amount = get_base_value(py, "paid_amount", "base_paid_amount")
-		_aggregate_payment(payments, py.mode_of_payment, amount)
+	pos_payments_table = _process_payment_entries(
+		payment_entries,
+		payments,
+		summary,
+		allocations,
+		{invoice.name for invoice in invoices},
+		invoices_by_entry,
+	)
 
 	# Process POS Expenses — reduce expected cash per payment mode
 	from pos_next.api.expenses import get_pos_expenses
@@ -674,7 +775,13 @@ def make_closing_shift_from_opening(opening_shift):
 	)
 	closing_shift.set("payment_reconciliation", payments)
 	closing_shift.set("taxes", taxes)
-	closing_shift.set("pos_payments", pos_payments_table)
+	closing_shift.set(
+		"pos_payments",
+		[
+			{k: v for k, v in row.items() if k not in ("sales_invoice", "base_amount")}
+			for row in pos_payments_table
+		],
+	)
 	closing_shift.set("pos_expenses", pos_expenses_table)
 
 	# Build response with display-only fields
@@ -688,6 +795,9 @@ def make_closing_shift_from_opening(opening_shift):
 			"expenses_total": expenses_total,
 			"expenses_count": len(pos_expenses_table),
 			"pos_expenses": pos_expenses_table,
+			"payments_received_total": summary["payments_received_total"],
+			"payments_received_count": summary["payments_received_count"],
+			"pos_payments": pos_payments_table,  # Include invoice info for display
 			"pos_transactions": pos_transactions,  # Include return info for display
 		}
 	)
