@@ -26,6 +26,40 @@ def validate(doc, method=None):
 	auto_assign_loyalty_program_on_invoice(doc)
 	sync_return_loyalty_program(doc)
 	allow_zero_valuation_for_pos(doc)
+	stamp_pos_opening_shift(doc)
+
+
+def stamp_pos_opening_shift(doc):
+	"""Give a POS invoice submitted outside the POS app the submitter's open shift.
+
+	The POS app writes ``posa_pos_opening_shift`` itself.  An invoice typed in
+	the desk with "Include Payment (POS)" ticked carries the profile but no
+	shift, so the closing shift never lists the sale and only meets its cash
+	later, as an on-account receipt.  When the user submitting it is running
+	a shift on that same profile, the sale belongs to that shift.
+
+	Only at submit: the closing's draft cleanup deletes unprinted drafts of a
+	shift, so a half-typed desk invoice must not be claimed early.
+	"""
+	if doc.docstatus != 1 or not doc.get("is_pos") or doc.get("is_consolidated"):
+		return
+	if doc.get("posa_pos_opening_shift") or not doc.get("pos_profile"):
+		return
+
+	shift = frappe.db.get_value(
+		"POS Opening Shift",
+		{
+			"user": frappe.session.user,
+			"pos_profile": doc.pos_profile,
+			"docstatus": 1,
+			"status": "Open",
+			"pos_closing_shift": ["is", "not set"],
+		},
+		"name",
+		order_by="period_start_date desc",
+	)
+	if shift:
+		doc.posa_pos_opening_shift = shift
 
 
 def allow_zero_valuation_for_pos(doc):
