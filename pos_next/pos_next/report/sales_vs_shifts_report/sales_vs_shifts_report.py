@@ -735,14 +735,16 @@ def fetch_payment_data_single(shift):
 	query = """
 		SELECT
 			LOWER(sip.mode_of_payment) AS mode,
+			COALESCE(mop.type, 'Cash') AS type,
 			SUM(sip.amount) AS amount
 		FROM `tabSales Invoice Payment` sip
 		INNER JOIN `tabSales Invoice` si ON si.name = sip.parent
 		INNER JOIN `tabSales Invoice Reference` sir ON sir.sales_invoice = si.name
 			AND sir.parent = %(shift)s
 			AND sir.parenttype = 'POS Closing Shift'
+		LEFT JOIN `tabMode of Payment` mop ON mop.name = sip.mode_of_payment
 		WHERE si.docstatus = 1 AND si.is_return = 0
-		GROUP BY LOWER(sip.mode_of_payment)
+		GROUP BY LOWER(sip.mode_of_payment), mop.type
 	"""
 
 	payments = frappe.db.sql(
@@ -753,10 +755,19 @@ def fetch_payment_data_single(shift):
 		as_dict=True,
 	)
 
+	return split_cash_and_non_cash(payments)
+
+
+def split_cash_and_non_cash(payments):
+	"""Total payment rows into cash and non-cash by Mode of Payment type.
+
+	The type decides, never the name: "Natcash" and "Mon Cash" are mobile
+	money and belong with the non-cash takings.
+	"""
 	cash = 0
 	non_cash = 0
 	for p in payments:
-		if "cash" in (p.mode or ""):
+		if (p.get("type") or "") == "Cash":
 			cash += flt(p.amount)
 		else:
 			non_cash += flt(p.amount)
