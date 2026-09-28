@@ -805,10 +805,49 @@ def make_closing_shift_from_opening(opening_shift):
 	return result
 
 
+def merge_counted_amounts(fresh, counted):
+	"""Copy the cashier's counted amounts onto a freshly computed closing.
+
+	``fresh`` is what ``make_closing_shift_from_opening`` returned a moment
+	ago; ``counted`` is the dialog's copy, possibly minutes old.  Only what
+	the cashier typed is taken from it: the closing amount of each mode of
+	payment.  Everything else (sales, receipts, expenses, expected amounts)
+	comes from the server so a sale rung after the dialog was opened is not
+	lost between the shift and its closing.
+	"""
+	by_mode = {}
+	for row in counted.get("payment_reconciliation") or []:
+		if row.get("mode_of_payment"):
+			by_mode[row["mode_of_payment"]] = row
+
+	for row in fresh.get("payment_reconciliation") or []:
+		source = by_mode.get(row.get("mode_of_payment"))
+		if source is None or source.get("closing_amount") in (None, ""):
+			continue
+		row["closing_amount"] = flt(source.get("closing_amount"))
+		row["difference"] = flt(row["closing_amount"]) - flt(row.get("expected_amount"))
+
+	return fresh
+
+
 @frappe.whitelist()
 def submit_closing_shift(closing_shift):
-	closing_shift = json.loads(closing_shift)
-	closing_shift_doc = frappe.get_doc(closing_shift)
+	"""Close a shift from the POS.
+
+	The client sends the closing it displayed, but the server recomputes the
+	closing from the opening shift at this moment and keeps only the counted
+	amounts from the client (see ``merge_counted_amounts``).
+	"""
+	counted = json.loads(closing_shift) if isinstance(closing_shift, str) else closing_shift
+	opening_name = counted.get("pos_opening_shift")
+	if not opening_name:
+		frappe.throw(_("POS Opening Shift is required to close a shift"))
+
+	opening = frappe.get_doc("POS Opening Shift", opening_name)
+	fresh = make_closing_shift_from_opening(json.dumps(opening.as_dict(), default=str))
+	merge_counted_amounts(fresh, counted)
+
+	closing_shift_doc = frappe.get_doc(fresh)
 	closing_shift_doc.flags.ignore_permissions = True
 	closing_shift_doc.save()
 	closing_shift_doc.submit()
