@@ -10,7 +10,7 @@ from erpnext.accounts.doctype.pos_invoice_merge_log.pos_invoice_merge_log import
 )
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 
 def get_base_value(doc, fieldname, base_fieldname=None, conversion_rate=None):
@@ -820,38 +820,91 @@ def merge_counted_amounts(fresh, counted):
 		if row.get("mode_of_payment"):
 			by_mode[row["mode_of_payment"]] = row
 
-	for row in fresh.get("payment_reconciliation") or []:
+	rows = fresh.setdefault("payment_reconciliation", [])
+	seen = set()
+	for row in rows:
+		seen.add(row.get("mode_of_payment"))
 		source = by_mode.get(row.get("mode_of_payment"))
 		if source is None or source.get("closing_amount") in (None, ""):
 			continue
 		row["closing_amount"] = flt(source.get("closing_amount"))
 		row["difference"] = flt(row["closing_amount"]) - flt(row.get("expected_amount"))
 
+	# A mode the cashier counted that the rebuilt closing no longer expects
+	# (its only payment was cancelled meanwhile) is still money declared in
+	# the drawer: keep the count against an expected amount of zero.
+	for mode, source in by_mode.items():
+		if mode in seen or source.get("closing_amount") in (None, ""):
+			continue
+		closing_amount = flt(source.get("closing_amount"))
+		rows.append(
+			{
+				"mode_of_payment": mode,
+				"opening_amount": 0,
+				"expected_amount": 0,
+				"closing_amount": closing_amount,
+				"difference": closing_amount,
+			}
+		)
+
 	return fresh
 
 
+# Roles allowed to close a shift they do not run themselves.
+SHIFT_MANAGER_ROLES = ("System Manager", "Accounts Manager", "Nexus POS Manager")
+
+
+def _assert_can_close(opening):
+	if opening.user == frappe.session.user:
+		return
+	if set(frappe.get_roles()) & set(SHIFT_MANAGER_ROLES):
+		return
+	frappe.throw(_("Only the cashier running the shift, or a manager, can close it"), frappe.PermissionError)
+
+
 @frappe.whitelist()
-def submit_closing_shift(closing_shift):
+def submit_closing_shift(closing_shift, return_closing=False):
 	"""Close a shift from the POS.
 
 	The client sends the closing it displayed, but the server recomputes the
 	closing from the opening shift at this moment and keeps only the counted
 	amounts from the client (see ``merge_counted_amounts``).
+
+	The opening shift row is locked for the transaction, so a second submit
+	of the same shift waits for the first and then finds it closed.  With
+	``return_closing`` the saved figures come back for the dialog to show.
 	"""
 	counted = json.loads(closing_shift) if isinstance(closing_shift, str) else closing_shift
+	if not isinstance(counted, dict):
+		frappe.throw(_("Invalid closing shift payload"))
 	opening_name = counted.get("pos_opening_shift")
 	if not opening_name:
 		frappe.throw(_("POS Opening Shift is required to close a shift"))
 
+	status = frappe.db.get_value("POS Opening Shift", opening_name, "status", for_update=True)
+	if status is None:
+		frappe.throw(_("POS Opening Shift {0} does not exist").format(opening_name))
+	if status != "Open":
+		frappe.throw(_("POS Opening Shift {0} is already closed").format(opening_name))
+
 	opening = frappe.get_doc("POS Opening Shift", opening_name)
+	_assert_can_close(opening)
+
 	fresh = make_closing_shift_from_opening(json.dumps(opening.as_dict(), default=str))
 	merge_counted_amounts(fresh, counted)
 
-	closing_shift_doc = frappe.get_doc(fresh)
+	# The same shape the dialog used to send back: dates and decimals as text.
+	closing_shift_doc = frappe.get_doc(json.loads(json.dumps(fresh, default=str)))
 	closing_shift_doc.flags.ignore_permissions = True
 	closing_shift_doc.save()
 	closing_shift_doc.submit()
-	return closing_shift_doc.name
+
+	if not cint(return_closing):
+		return closing_shift_doc.name
+
+	fresh["name"] = closing_shift_doc.name
+	fresh["docstatus"] = 1
+	return {"name": closing_shift_doc.name, "closing": json.loads(json.dumps(fresh, default=str))}
 
 
 def submit_printed_invoices(pos_opening_shift, doctype):

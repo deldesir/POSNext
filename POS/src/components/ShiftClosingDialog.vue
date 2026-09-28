@@ -1439,6 +1439,11 @@ async function submitClosing() {
 		// Submit to server
 		const result = await submitResource.submit({ closing_shift: closingData.value });
 		const closingShiftName = result?.name ?? submitResource.data?.name;
+		// The server rebuilt the closing at submit; show what was saved, not the
+		// snapshot taken when the dialog opened.
+		if (result?.closing && typeof result.closing === "object") {
+			closingData.value = { ...closingData.value, ...result.closing };
+		}
 		if (closingShiftName) {
 			try {
 				await printEODReport(closingShiftName);
