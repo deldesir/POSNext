@@ -2019,6 +2019,7 @@ import {
 	roundCurrency,
 } from "@/utils/currency";
 import { getPaymentIcon } from "@/utils/payment";
+import { isCashPaymentMethod } from "@/utils/paymentMethods";
 import { offlineWorker } from "@/utils/offline/workerClient";
 import { logger } from "@/utils/logger";
 import { Dialog, createResource, call } from "frappe-ui";
@@ -2399,20 +2400,6 @@ async function identifyWalletPaymentMethods() {
 // Check if a payment method is a wallet payment
 function isWalletPaymentMethod(methodName) {
 	return walletPaymentMethods.value.has(methodName);
-}
-
-// Check if a payment method is a cash payment (allows overpayment/change)
-function isCashPaymentMethod(method) {
-	if (!method) return false;
-	// Check by account_type first (most reliable - from linked Account)
-	const accountType = (method.account_type || "").toLowerCase();
-	if (accountType === "cash") return true;
-	// Fallback to Mode of Payment type
-	const type = (method.type || "").toLowerCase();
-	if (type === "cash") return true;
-	// Check by mode_of_payment name as fallback
-	const name = (method.mode_of_payment || "").toLowerCase();
-	return name.includes("cash") || name.includes("نقد") || name.includes("نقدي");
 }
 
 // Check if a payment method posts to a Receivable account (requires customer)
@@ -3096,9 +3083,7 @@ function getDefaultNonWalletMethod() {
 
 	// Otherwise, find any non-wallet method (preferably Cash)
 	const cashMethod = paymentMethods.value.find(
-		(m) =>
-			!isWalletPaymentMethod(m.mode_of_payment) &&
-			(m.mode_of_payment.toLowerCase().includes("cash") || m.type?.toLowerCase() === "cash")
+		(m) => !isWalletPaymentMethod(m.mode_of_payment) && isCashPaymentMethod(m)
 	);
 	if (cashMethod) return cashMethod;
 
