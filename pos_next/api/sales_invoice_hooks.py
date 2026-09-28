@@ -38,12 +38,20 @@ def stamp_pos_opening_shift(doc):
 	later, as an on-account receipt.  When the user submitting it is running
 	a shift on that same profile, the sale belongs to that shift.
 
+	An invoice that arrives carrying a shift which has since been closed (an
+	offline queue synced after the cash-up) is moved to the submitter's open
+	shift on that profile as well; left where it is, it would be counted in
+	no closing at all.
+
 	Only at submit: the closing's draft cleanup deletes unprinted drafts of a
 	shift, so a half-typed desk invoice must not be claimed early.
 	"""
 	if doc.docstatus != 1 or not doc.get("is_pos") or doc.get("is_consolidated"):
 		return
-	if doc.get("posa_pos_opening_shift") or not doc.get("pos_profile"):
+	if not doc.get("pos_profile"):
+		return
+	current = doc.get("posa_pos_opening_shift")
+	if current and frappe.db.get_value("POS Opening Shift", current, "status") == "Open":
 		return
 
 	shift = frappe.db.get_value(
