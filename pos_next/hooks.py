@@ -171,6 +171,8 @@ doc_events = {
 		],
 		"after_insert": "pos_next.realtime_events.emit_invoice_created_event",
 	},
+	# A customer receipt submitted from the desk belongs to the cashier's open shift
+	"Payment Entry": {"validate": "pos_next.api.payment_entry_hooks.stamp_pos_opening_shift"},
 	# Every stock-moving transaction: a line's conversion factor must be the one the item defines
 	"Purchase Order": {"validate": "pos_next.api.uom_guard.validate_conversion_factors"},
 	"Purchase Receipt": {"validate": "pos_next.api.uom_guard.validate_conversion_factors"},
@@ -283,7 +285,6 @@ permission_query_conditions = {
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
-
 
 
 # Extension points consumed by POS Next, implemented by optional apps

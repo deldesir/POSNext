@@ -50,11 +50,29 @@ class TestStampPosOpeningShift(unittest.TestCase):
 		self.assertIsNone(doc.posa_pos_opening_shift)
 		self.db.get_value.assert_not_called()
 
-	def test_pos_app_value_is_kept(self):
+	def test_pos_app_value_is_kept_while_that_shift_is_open(self):
+		self.db.get_value.side_effect = (
+			lambda doctype, *a, **k: "Open"
+			if doctype == "POS Opening Shift" and isinstance(a[0], str)
+			else None
+		)
 		doc = _invoice(posa_pos_opening_shift="POSA-OS-26-0000001")
 		hooks.stamp_pos_opening_shift(doc)
 		self.assertEqual(doc.posa_pos_opening_shift, "POSA-OS-26-0000001")
-		self.db.get_value.assert_not_called()
+		self.assertEqual(self.db.get_value.call_count, 1)
+
+	def test_invoice_synced_into_a_closed_shift_moves_to_the_open_one(self):
+		# First call: status of the carried shift; second call: the open shift lookup.
+		self.db.get_value.side_effect = ["Closed", "POSA-OS-26-0000042"]
+		doc = _invoice(posa_pos_opening_shift="POSA-OS-26-0000001")
+		hooks.stamp_pos_opening_shift(doc)
+		self.assertEqual(doc.posa_pos_opening_shift, "POSA-OS-26-0000042")
+
+	def test_closed_shift_is_kept_when_the_user_has_no_open_one(self):
+		self.db.get_value.side_effect = ["Closed", None]
+		doc = _invoice(posa_pos_opening_shift="POSA-OS-26-0000001")
+		hooks.stamp_pos_opening_shift(doc)
+		self.assertEqual(doc.posa_pos_opening_shift, "POSA-OS-26-0000001")
 
 	def test_non_pos_and_consolidated_invoices_are_skipped(self):
 		for doc in (_invoice(is_pos=0), _invoice(is_consolidated=1), _invoice(pos_profile=None)):
