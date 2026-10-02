@@ -1470,6 +1470,14 @@ async function submitClosing() {
 			closeDialog();
 		}
 	} catch (error) {
+		if (error?.exc_type === "ShiftAlreadyClosedError") {
+			// An earlier submit went through but its answer never arrived; the
+			// shift is closed, so leave the dialog instead of looping on retries.
+			showWarning(__("This shift was already closed."));
+			emit("shift-closed");
+			closeDialog();
+			return;
+		}
 		console.error("Error submitting closing shift:", error);
 		errorMessage.value = "Failed to close shift. Please verify all amounts and try again.";
 	}
