@@ -68,11 +68,24 @@ class TestStampPosOpeningShift(unittest.TestCase):
 		hooks.stamp_pos_opening_shift(doc)
 		self.assertEqual(doc.posa_pos_opening_shift, "POSA-OS-26-0000042")
 
-	def test_closed_shift_is_kept_when_the_user_has_no_open_one(self):
+	def test_selling_into_a_closed_shift_without_an_open_one_is_refused(self):
 		self.db.get_value.side_effect = ["Closed", None]
 		doc = _invoice(posa_pos_opening_shift="POSA-OS-26-0000001")
+		with (
+			patch.object(
+				hooks.frappe, "throw", side_effect=lambda msg, *a, **k: (_ for _ in ()).throw(ValueError(msg))
+			),
+			patch.object(hooks, "_", side_effect=lambda m: m),
+		):
+			with self.assertRaises(ValueError) as ctx:
+				hooks.stamp_pos_opening_shift(doc)
+		self.assertIn("POSA-OS-26-0000001 is closed", str(ctx.exception))
+
+	def test_a_desk_invoice_without_any_shift_is_still_accepted(self):
+		self.db.get_value.return_value = None
+		doc = _invoice()
 		hooks.stamp_pos_opening_shift(doc)
-		self.assertEqual(doc.posa_pos_opening_shift, "POSA-OS-26-0000001")
+		self.assertIsNone(doc.posa_pos_opening_shift)
 
 	def test_non_pos_and_consolidated_invoices_are_skipped(self):
 		for doc in (_invoice(is_pos=0), _invoice(is_consolidated=1), _invoice(pos_profile=None)):

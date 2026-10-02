@@ -54,43 +54,49 @@ def get_customer_balance(customer, company=None):
 	if not customer:
 		frappe.throw(_("Customer is required"))
 
-	try:
-		filters = {"customer": customer, "docstatus": 1, **({"company": company} if company else {})}
-		total = ["sum(outstanding_amount) as total"]
+	# Positive outstanding (what customer owes)
+	total_outstanding = _sum_outstanding(customer, company, owed=True)
+	# Negative outstanding (customer credit)
+	total_credit = abs(_sum_outstanding(customer, company, owed=False))
 
-		# Positive outstanding (what customer owes)
-		total_outstanding = flt(
-			frappe.get_all(
-				"Sales Invoice", filters={**filters, "outstanding_amount": [">", 0]}, fields=total
-			)[0].total
+	# Net balance: positive = owes, negative = has credit
+	return {
+		"total_outstanding": total_outstanding,
+		"total_credit": total_credit,
+		"net_balance": total_outstanding - total_credit,
+	}
+
+
+def _sum_outstanding(customer, company, owed):
+	"""Sum of outstanding_amount on the customer's submitted invoices.
+
+	``owed`` selects the invoices with a positive outstanding; otherwise the
+	negative ones that hold customer credit (see CUSTOMER_CREDIT_OR_FILTERS).
+	Plain SQL: Frappe no longer accepts an aggregate written as a string in
+	``get_all`` fields, and that silent refusal left every balance at zero.
+	"""
+	conditions = [
+		"customer = %(customer)s",
+		"docstatus = 1",
+		"outstanding_amount > 0" if owed else "outstanding_amount < 0",
+	]
+	if company:
+		conditions.append("company = %(company)s")
+	if not owed:
+		conditions.append(
+			"(is_return = 0 OR IFNULL(return_against, '') = '' OR update_outstanding_for_self = 1)"
 		)
-		# Negative outstanding (customer credit)
-		total_credit = abs(
-			flt(
-				frappe.get_all(
-					"Sales Invoice",
-					filters={**filters, "outstanding_amount": ["<", 0]},
-					or_filters=CUSTOMER_CREDIT_OR_FILTERS,
-					fields=total,
-				)[0].total
-			)
-		)
 
-		# Net balance: positive = owes, negative = has credit
-		net_balance = total_outstanding - total_credit
-
-		return {
-			"total_outstanding": total_outstanding,
-			"total_credit": total_credit,
-			"net_balance": net_balance,
-		}
-
-	except Exception as e:
-		frappe.log_error(
-			title="Customer Balance Error",
-			message=f"Customer: {customer}, Company: {company}, Error: {str(e)}\n{frappe.get_traceback()}",
-		)
-		return {"total_outstanding": 0.0, "total_credit": 0.0, "net_balance": 0.0}
+	rows = frappe.db.sql(
+		f"""
+		SELECT COALESCE(SUM(outstanding_amount), 0) AS total
+		FROM `tabSales Invoice`
+		WHERE {" AND ".join(conditions)}
+		""",
+		{"customer": customer, "company": company},
+		as_dict=True,
+	)
+	return flt(rows[0].total) if rows else 0.0
 
 
 def check_credit_sale_enabled(pos_profile):
