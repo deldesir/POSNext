@@ -10,6 +10,7 @@ Run via::
 
 import json
 import unittest
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -220,6 +221,59 @@ class TestOnAccountReceipts(unittest.TestCase):
 		self.assertEqual(
 			get_all.call_args.kwargs["or_filters"], [["reference_no", "=", "POSA-OS-26-0000001"]]
 		)
+
+
+class TestTillReceipts(unittest.TestCase):
+	"""Only receipts the till can reconcile reach the closing, each with a mode."""
+
+	def setUp(self):
+		import pos_next.api.payment_modes as pm
+
+		self.pm = pm
+		patches = [
+			patch.object(pm, "profile_payment_modes", return_value=["Cash", "Natcash"]),
+			patch.object(
+				pm,
+				"mode_of_payment_for_account",
+				side_effect=lambda account, company: {"1110 - Cash - NM": "Cash"}.get(account),
+			),
+		]
+		for p in patches:
+			p.start()
+			self.addCleanup(p.stop)
+
+	def test_till_receipts_keep_their_mode_and_blank_ones_take_the_accounts(self):
+		entries = [
+			_payment_entry("PE-POS", 100, mode_of_payment="Natcash"),
+			frappe._dict(
+				_payment_entry("PE-DESK", 250, mode_of_payment=None), paid_to="1110 - Cash - NM", company="NM"
+			),
+		]
+		kept = pcs.till_receipts(entries, "Till A")
+		self.assertEqual(
+			[(r.name, r.mode_of_payment) for r in kept], [("PE-POS", "Natcash"), ("PE-DESK", "Cash")]
+		)
+
+	def test_a_bank_transfer_is_not_till_money(self):
+		entries = [
+			frappe._dict(
+				_payment_entry("PE-WIRE", 1225589, mode_of_payment=None),
+				paid_to="1202 - Sogebank HTG - MPA",
+				company="MPA",
+			),
+			_payment_entry("PE-CHEQUE", 500, mode_of_payment="Cheque"),
+			_payment_entry("PE-CASH", 50),
+		]
+		kept = pcs.till_receipts(entries, "Till A")
+		self.assertEqual([r.name for r in kept], ["PE-CASH"])
+
+	def test_a_profile_without_methods_keeps_every_receipt_that_has_a_mode(self):
+		self.pm.profile_payment_modes.return_value = []
+		entries = [
+			_payment_entry("PE-1", 10),
+			frappe._dict(_payment_entry("PE-2", 10, mode_of_payment=None), paid_to="x", company="c"),
+		]
+		self.assertEqual([r.name for r in pcs.till_receipts(entries, "Till A")], ["PE-1"])
 
 
 class TestPOSClosingShift(unittest.TestCase):

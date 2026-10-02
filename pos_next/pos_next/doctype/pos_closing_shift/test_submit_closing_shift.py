@@ -147,6 +147,9 @@ class TestSubmitClosingShift(unittest.TestCase):
 		with self.assertRaises(ValueError):
 			pcs.submit_closing_shift(json.dumps(self._client()))
 		self.mocks["make_closing_shift_from_opening"].assert_not_called()
+		# Raised as its own type so the dialog can treat the shift as closed.
+		self.assertIs(self.mocks["throw"].call_args.args[1], pcs.ShiftAlreadyClosedError)
+		self.assertTrue(issubclass(pcs.ShiftAlreadyClosedError, pcs.frappe.ValidationError))
 
 	def test_an_unknown_shift_is_refused(self):
 		self.db.get_value.return_value = None

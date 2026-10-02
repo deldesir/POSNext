@@ -405,9 +405,35 @@ def get_payments_entries(pos_opening_shift):
 			"reference_no",
 			"posting_date",
 			"party",
+			"paid_to",
+			"company",
 		],
 		order_by="posting_date asc, creation asc",
 	)
+
+
+def till_receipts(payment_entries, pos_profile):
+	"""Keep the receipts the till can reconcile, each with a mode of payment.
+
+	A receipt with no mode takes the one its receiving account implies.  A
+	receipt whose mode is not among the profile's methods (a wholesale bank
+	transfer keyed in by the cashier) is not drawer money and has no bucket in
+	the cash-up: it is left out rather than forced onto the cash row or
+	allowed to break the closing with a blank mode.
+	"""
+	from pos_next.api.payment_modes import profile_payment_modes, receipt_mode_of_payment
+
+	modes = set(profile_payment_modes(pos_profile))
+	kept = []
+	for py in payment_entries:
+		mode = receipt_mode_of_payment(py)
+		if not mode or (modes and mode not in modes):
+			continue
+		if not py.get("mode_of_payment"):
+			py = frappe._dict(py)
+			py["mode_of_payment"] = mode
+		kept.append(py)
+	return kept
 
 
 def _allocations_by_invoice(payment_entries):
@@ -698,7 +724,9 @@ def make_closing_shift_from_opening(opening_shift):
 	# Receipts taken during the shift on earlier invoices (Partial Payments /
 	# Unpaid screens).  Fetched before the invoices so a sale made and paid
 	# down in the same shift shows the money on its own row.
-	payment_entries = get_payments_entries(opening_shift.get("name"))
+	payment_entries = till_receipts(
+		get_payments_entries(opening_shift.get("name")), opening_shift.get("pos_profile")
+	)
 	allocations, invoices_by_entry = _allocations_by_invoice(payment_entries)
 
 	# Process invoices
@@ -854,6 +882,10 @@ def merge_counted_amounts(fresh, counted):
 SHIFT_MANAGER_ROLES = ("System Manager", "Accounts Manager", "Nexus POS Manager")
 
 
+class ShiftAlreadyClosedError(frappe.ValidationError):
+	"""The opening shift was closed before this submit reached it."""
+
+
 def _assert_can_close(opening):
 	if opening.user == frappe.session.user:
 		return
@@ -885,7 +917,9 @@ def submit_closing_shift(closing_shift, return_closing=False):
 	if status is None:
 		frappe.throw(_("POS Opening Shift {0} does not exist").format(opening_name))
 	if status != "Open":
-		frappe.throw(_("POS Opening Shift {0} is already closed").format(opening_name))
+		frappe.throw(
+			_("POS Opening Shift {0} is already closed").format(opening_name), ShiftAlreadyClosedError
+		)
 
 	opening = frappe.get_doc("POS Opening Shift", opening_name)
 	_assert_can_close(opening)
