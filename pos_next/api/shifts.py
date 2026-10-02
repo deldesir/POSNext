@@ -183,6 +183,11 @@ def submit_closing_shift(closing_shift):
 
 		result = submit_shift(closing_shift, return_closing=True)
 		return {"name": result["name"], "status": "success", "closing": result["closing"]}
+	except (frappe.ValidationError, frappe.PermissionError):
+		# Already user-facing and typed (ShiftAlreadyClosedError, permission,
+		# mandatory fields): the dialog reads the type, so pass it through
+		# unchanged and keep the error log for genuine failures.
+		raise
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Submit Closing Shift Error")
 		frappe.throw(_("Error submitting closing shift: {0}").format(str(e)))
