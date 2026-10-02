@@ -68,6 +68,15 @@ def stamp_pos_opening_shift(doc):
 	)
 	if shift:
 		doc.posa_pos_opening_shift = shift
+	elif current:
+		# A till whose shift was closed under it (the answer to the close never
+		# arrived) must not keep selling into that shift: the sale would be
+		# counted in no closing.  Opening a new shift re-homes the sale.
+		frappe.throw(
+			_("POS Opening Shift {0} is closed. Open a new shift before submitting this invoice.").format(
+				current
+			)
+		)
 
 
 def allow_zero_valuation_for_pos(doc):
