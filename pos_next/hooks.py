@@ -181,6 +181,9 @@ doc_events = {
 	"Delivery Note": {"validate": "pos_next.api.uom_guard.validate_conversion_factors"},
 	"Stock Entry": {"validate": "pos_next.api.uom_guard.validate_conversion_factors"},
 	"POS Profile": {"on_update": "pos_next.realtime_events.emit_pos_profile_updated_event"},
+	"Sales Person": {
+		"validate": "pos_next.pos_next.utils.sales_person_commission.validate_sales_person_commission_tables"
+	},
 	"Mode of Payment": {
 		"after_insert": "pos_next.api.wallet.clear_wallet_payment_modes_cache",
 		"on_update": "pos_next.api.wallet.clear_wallet_payment_modes_cache",
