@@ -171,11 +171,14 @@ class TestOnAccountReceipts(unittest.TestCase):
 			entries, payments, summary, allocations, {"INV-THIS-SHIFT"}, invoices_by_entry
 		)
 
-		# Every receipt feeds its mode's expected amount.
+		# Every receipt feeds its mode's expected amount, and lands in the on-account part.
 		cash = next(p for p in payments if p.mode_of_payment == "Cash")
 		card = next(p for p in payments if p.mode_of_payment == "Card")
 		self.assertEqual(cash.expected_amount, 100)
 		self.assertEqual(card.expected_amount, 250)
+		self.assertEqual(cash.received_amount, 100)
+		self.assertEqual(cash.sales_amount, 0)
+		self.assertEqual(card.received_amount, 250)
 
 		# Collected = 100 (already on the invoice row) + 250 (older invoice); the
 		# same-shift receipt is not counted twice.
@@ -397,6 +400,51 @@ class TestPOSClosingShift(unittest.TestCase):
 			summary["collected_total"] + summary["outstanding_total"] - summary["credit_notes_total"],
 		)
 		self.assertEqual(payments, [])
+
+	def test_mode_row_parts_add_up_to_expected(self):
+		"""expected = opening + sales (net of change) + received on account - expenses, per mode."""
+		summary = _empty_summary()
+		summary.update({"payments_received_total": 0, "payments_received_count": 0})
+		payments = [
+			frappe._dict(
+				mode_of_payment="Cash",
+				opening_amount=50,
+				expected_amount=50,
+				sales_amount=0,
+				received_amount=0,
+				expense_amount=0,
+			)
+		]
+		taxes = []
+
+		# a 100 sale paid with a 120 bill, 20 change handed back
+		sale = _invoice(
+			"INV-CASH",
+			grand_total=100,
+			paid_amount=120,
+			change_amount=20,
+			payments=[frappe._dict({"mode_of_payment": "Cash", "amount": 120, "base_amount": 120})],
+		)
+		_process_invoice(sale, "sales_invoice", "USD", "Cash", payments, taxes, summary)
+		cash = payments[0]
+		self.assertEqual(cash.sales_amount, 100)
+		self.assertEqual(cash.expected_amount, 150)
+
+		# 30 received on account against an older invoice
+		_process_payment_entries(
+			[_payment_entry("PE-OLD", 30)], payments, summary, {"INV-OLD": 30}, set(), {"PE-OLD": ["INV-OLD"]}
+		)
+		self.assertEqual(cash.received_amount, 30)
+		self.assertEqual(cash.expected_amount, 180)
+
+		# a 20 expense paid from the drawer
+		pcs._aggregate_payment(payments, "Cash", -20)
+		cash.expense_amount = 20
+		self.assertEqual(cash.expected_amount, 160)
+		self.assertEqual(
+			cash.expected_amount,
+			cash.opening_amount + cash.sales_amount + cash.received_amount - cash.expense_amount,
+		)
 
 	def test_refund_return_reduces_collected(self):
 		"""A refunded return takes money out of the drawer and out of collected."""
