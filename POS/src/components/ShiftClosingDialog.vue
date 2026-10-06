@@ -1646,6 +1646,11 @@ const getTotalDifference = computed(() => {
 });
 
 function getSalesForPayment(payment) {
+	// What the mode took on invoices. Older payloads only carry expected and opening, which
+	// also include receipts on account and expenses paid from the drawer.
+	if (payment.sales_amount !== undefined && payment.sales_amount !== null) {
+		return Number.parseFloat(payment.sales_amount || 0);
+	}
 	return (
 		Number.parseFloat(payment.expected_amount || 0) -
 		Number.parseFloat(payment.opening_amount || 0)

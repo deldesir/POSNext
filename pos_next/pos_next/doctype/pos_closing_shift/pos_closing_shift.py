@@ -231,7 +231,6 @@ class POSClosingShift(Document):
 					currency,
 					payment.amount,
 				)
-
 			change_amount = invoice_doc.get("change_amount") or 0
 			if change_amount:
 				update_payment_breakdown(
@@ -278,7 +277,9 @@ class POSClosingShift(Document):
 					if amount
 				]
 
-			base_total = flt(detail.expected_amount) - flt(detail.opening_amount)
+			# What this mode took on the shift's invoices. Not expected - opening: that also
+			# carries receipts on account and expenses paid from the drawer.
+			base_total = flt(breakdown["base"]) if breakdown else 0.0
 
 			mode_summaries.append(
 				frappe._dict(
@@ -490,7 +491,7 @@ def _process_payment_entries(
 				}
 			)
 		)
-		_aggregate_payment(payments, py.mode_of_payment, base_amount)
+		_aggregate_payment(payments, py.mode_of_payment, base_amount, bucket="received_amount")
 		received_total += base_amount
 
 	already_on_rows = sum(amount for invoice, amount in allocations.items() if invoice in shift_invoices)
@@ -507,21 +508,33 @@ def _get_cash_mode_of_payment(pos_profile):
 	return cash_mode or "Cash"
 
 
-def _aggregate_payment(payments, mode_of_payment, amount, opening_amount=0):
-	"""Add or update payment amount for a mode of payment."""
+def _aggregate_payment(payments, mode_of_payment, amount, opening_amount=0, bucket=None):
+	"""Add or update payment amount for a mode of payment.
+
+	``bucket`` names the part of the expected amount this money belongs to -
+	``sales_amount`` (invoice payments, net of change and refunds) or
+	``received_amount`` (receipts on account) - so a row always reads
+	expected = opening + sales + received - expenses. The parts are display-only.
+	"""
 	for pay in payments:
 		if pay.mode_of_payment == mode_of_payment:
 			pay.expected_amount += flt(amount)
+			if bucket:
+				pay[bucket] = flt(pay.get(bucket)) + flt(amount)
 			return
-	payments.append(
-		frappe._dict(
-			{
-				"mode_of_payment": mode_of_payment,
-				"opening_amount": opening_amount,
-				"expected_amount": flt(amount) + opening_amount,
-			}
-		)
+	row = frappe._dict(
+		{
+			"mode_of_payment": mode_of_payment,
+			"opening_amount": opening_amount,
+			"expected_amount": flt(amount) + opening_amount,
+			"sales_amount": 0,
+			"received_amount": 0,
+			"expense_amount": 0,
+		}
 	)
+	if bucket:
+		row[bucket] = flt(amount)
+	payments.append(row)
 
 
 def _aggregate_tax(taxes, account_head, rate, amount):
@@ -646,7 +659,7 @@ def _process_invoice(
 		if is_return and mode not in known_modes:
 			mode = cash_mode
 
-		_aggregate_payment(payments, mode, amount)
+		_aggregate_payment(payments, mode, amount, bucket="sales_amount")
 
 	# Subtract change_amount once from the cash mode.  change_amount is an
 	# invoice-level field — the customer overpaid and received change back,
@@ -654,7 +667,7 @@ def _process_invoice(
 	# outside the loop avoids double-subtraction when multiple payment rows
 	# share the same cash mode. (base_change computed above, reused here.)
 	if base_change:
-		_aggregate_payment(payments, cash_mode, -base_change)
+		_aggregate_payment(payments, cash_mode, -base_change, bucket="sales_amount")
 
 	return transaction
 
@@ -714,6 +727,9 @@ def make_closing_shift_from_opening(opening_shift):
 					"mode_of_payment": detail.get("mode_of_payment"),
 					"opening_amount": opening_amount,
 					"expected_amount": opening_amount,
+					"sales_amount": 0,
+					"received_amount": 0,
+					"expense_amount": 0,
 				}
 			)
 		)
