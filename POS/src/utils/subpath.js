@@ -20,3 +20,16 @@ export function withSubpathRequest(options) {
 	const spelled = url.startsWith("/") || url.startsWith("http") ? withSubpath(url) : withSubpath("/api/method/" + url);
 	return spelled === url ? options : { ...options, url: spelled };
 }
+
+// Safety net, so nothing in the app or its libraries can reach the root by spelling a bare site
+// path (frappe-ui's own call helper, direct fetches, XHR uploads): the prefix goes in once, here.
+if (SUBPATH && typeof globalThis.fetch === "function") {
+	const fetch_ = globalThis.fetch.bind(globalThis);
+	globalThis.fetch = (input, ...rest) => fetch_(typeof input === "string" ? withSubpath(input) : input, ...rest);
+}
+if (SUBPATH && typeof globalThis.XMLHttpRequest === "function") {
+	const open = XMLHttpRequest.prototype.open;
+	XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+		return open.call(this, method, typeof url === "string" ? withSubpath(url) : url, ...rest);
+	};
+}
