@@ -4,9 +4,10 @@ import { computed, ref, toRaw } from "vue";
 import { isOffline, getCachedItem } from "@/utils/offline";
 import { resolveLocalUomPrice } from "@/utils/uomPrice";
 import { useSerialNumberStore } from "@/stores/serialNumber";
+import { usePOSSettingsStore } from "@/stores/posSettings";
 import { CoalescingMutex } from "@/utils/mutex";
 import { logger } from "@/utils/logger";
-import { roundCurrency } from "@/utils/currency";
+import { roundCurrency, roundGrandTotal } from "@/utils/currency";
 
 const log = logger.create("Invoice");
 
@@ -20,6 +21,8 @@ const submitMutex = new CoalescingMutex({
 export function useInvoice() {
 	// Serial Number Store for returning serials when items are removed
 	const serialStore = useSerialNumberStore();
+	// Whether the POS Profile rounds totals to the whole currency unit (ERPNext's rounded_total)
+	const settingsStore = usePOSSettingsStore();
 
 	function resolveCustomerName() {
 		return customer.value?.name || customer.value || defaultCustomerName.value || null;
@@ -198,14 +201,15 @@ export function useInvoice() {
 	const grandTotal = computed(() => {
 		const discount = _cachedTotalDiscount.value + (additionalDiscount.value || 0);
 
+		// Currency precision from System Settings; rounded to the whole unit when the profile
+		// rounds totals, so the cart asks for what the invoice will actually carry.
+		const rounding = settingsStore.disableRoundedTotal;
 		if (taxInclusive.value) {
 			// Tax inclusive: Subtotal already includes tax, so don't add it again
-			// Use roundCurrency to match ERPNext's currency precision (from System Settings)
-			return roundCurrency(_cachedSubtotal.value - discount);
+			return roundGrandTotal(_cachedSubtotal.value - discount, rounding);
 		} else {
 			// Tax exclusive: Add tax on top of subtotal
-			// Use roundCurrency to match ERPNext's currency precision (from System Settings)
-			return roundCurrency(_cachedSubtotal.value + _cachedTotalTax.value - discount);
+			return roundGrandTotal(_cachedSubtotal.value + _cachedTotalTax.value - discount, rounding);
 		}
 	});
 	const totalPaid = computed(() => _cachedTotalPaid.value);
