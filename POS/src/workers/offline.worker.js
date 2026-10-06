@@ -1,11 +1,12 @@
 // Site sub-path (e.g. /erp). Vite loads this worker from the root /assets/... path whatever the
-// page's mount, so the page passes the prefix in the worker's name ("subpath=/erp"); the
-// script's own path is only the fallback.
-const SUBPATH = (() => {
-	const m = /(?:^|&)subpath=([^&]*)/.exec(self.name || "");
-	if (m) return decodeURIComponent(m[1]).replace(/\/+$/, "");
-	return ((self.location && self.location.pathname) || "").split("/assets/")[0].replace(/\/+$/, "");
-})();
+// page's mount, so the page sends the prefix as its first message (SET_SUBPATH) and the first
+// ping waits for it; the script's own path is only the fallback.
+let SUBPATH = ((self.location && self.location.pathname) || "").split("/assets/")[0].replace(/\/+$/, "");
+let resolveSubpath;
+const subpathReady = new Promise((resolve) => {
+	resolveSubpath = resolve;
+	setTimeout(resolve, 500); // an older page that never sends it must not stall the worker
+});
 
 /**
  * @fileoverview Offline Worker - Enterprise-Grade Background Task Processor
@@ -1704,6 +1705,10 @@ self.onmessage = async (event) => {
 		let result;
 
 		switch (type) {
+			case "SET_SUBPATH":
+				SUBPATH = (payload && payload.subpath) || "";
+				resolveSubpath();
+				break;
 			case "SET_CSRF_TOKEN":
 				csrfToken = payload.token;
 				result = { success: true };
@@ -1921,7 +1926,8 @@ async function initialize() {
 			});
 		}, 30000);
 
-		// Initial ping
+		// Initial ping, once the page has said which sub-path to spell
+		await subpathReady;
 		const isOnline = await pingServer();
 
 		self.postMessage({
