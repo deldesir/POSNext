@@ -12,6 +12,8 @@ from erpnext.stock.doctype.batch.batch import get_batch_no, get_batch_qty
 from frappe import _
 from frappe.utils import cint, cstr, flt, get_datetime, nowdate, nowtime
 
+from pos_next.api.write_off import auto_write_off_checkout_remainder
+
 # ==========================================
 # Constants for field names (avoid typos and enable refactoring)
 # ==========================================
@@ -1732,6 +1734,10 @@ def submit_invoice(invoice=None, data=None):
 						f"Failed to apply write-off from POS Profile {pos_profile}: {e}",
 						"POS Write-Off Error",
 					)
+
+		# What whole-gourde money leaves against a total with cents is written off within the
+		# profile's limit, instead of leaving the sale "Partly Paid" by a few centimes.
+		auto_write_off_checkout_remainder(invoice_doc, pos_profile)
 
 		# Validate stock availability before submission
 		# _validate_stock_on_invoice checks _should_block internally

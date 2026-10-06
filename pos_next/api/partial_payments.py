@@ -29,6 +29,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_datetime, get_time, nowdate
 
+from pos_next.api.write_off import write_off_receipt_remainder
+
 # ==========================================
 # Constants and Configuration
 # ==========================================
@@ -510,6 +512,10 @@ def create_payment_entry(
 
 		if pos_opening_shift and _shift_field_available():
 			pe.set(SHIFT_FIELD, pos_opening_shift)
+
+		# Whole-gourde money against a due with cents: the remainder, within the profile's
+		# write-off limit, is absorbed so the invoice ends Paid.
+		write_off_receipt_remainder(pe, invoice, amount)
 
 		# Allow system to create payment entry even if user doesn't have direct permission
 		# This is safe because we've already validated invoice access

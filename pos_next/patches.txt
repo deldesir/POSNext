@@ -9,3 +9,4 @@ pos_next.patches.v2_4_0.rehome_auth_gate_to_pos_next
 pos_next.patches.v2_3_0.enable_posa_allow_cancel_pos_expense
 pos_next.patches.v2_0_0.seed_desktop_icon
 pos_next.patches.v2_4_0.backfill_credit_notes_total
+pos_next.patches.v2_4_0.zero_linked_return_outstanding

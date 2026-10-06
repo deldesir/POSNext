@@ -17,6 +17,7 @@ def validate(doc, method=None):
 	Apply tax inclusive settings based on POS Profile configuration.
 	Auto-assign loyalty program to customer if enabled.
 	Keep return invoices aligned with the original invoice's loyalty program.
+	A linked POS return carries no due of its own: its credit sits on the original.
 
 	Args:
 		doc: Sales Invoice document
@@ -27,6 +28,7 @@ def validate(doc, method=None):
 	sync_return_loyalty_program(doc)
 	allow_zero_valuation_for_pos(doc)
 	stamp_pos_opening_shift(doc)
+	zero_linked_return_outstanding(doc)
 
 
 def stamp_pos_opening_shift(doc):
@@ -289,3 +291,19 @@ def before_cancel(doc, method=None):
 			alert=True,
 			indicator="orange",
 		)
+
+
+def zero_linked_return_outstanding(doc):
+	"""A POS return posted against its original (update_outstanding_for_self = 0) holds no due.
+
+	Its receivable entries carry the original as against-voucher, so the ledger reduces the
+	original's outstanding and never posts anything against the return. ERPNext only skips
+	the return's own outstanding for non-POS returns; a POS credit return (no refund rows)
+	would otherwise store -grand_total as well, and every sum of invoice dues - Sales
+	Register, list totals - would count the credit twice.
+	"""
+	if not (cint(doc.get("is_pos")) and cint(doc.get("is_return")) and doc.get("return_against")):
+		return
+	if cint(doc.get("update_outstanding_for_self")):
+		return
+	doc.outstanding_amount = 0

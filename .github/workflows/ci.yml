@@ -108,6 +108,7 @@ jobs:
           bench --site test_site set-config allow_tests true
           bench --site test_site run-tests --module pos_next.test_promotions
           bench --site test_site run-tests --module pos_next.api.test_credit_linked_returns
+          bench --site test_site run-tests --module pos_next.api.test_write_off
         env:
           TYPE: server
 

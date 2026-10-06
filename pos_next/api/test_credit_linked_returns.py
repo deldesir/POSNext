@@ -92,8 +92,10 @@ class TestLinkedReturnCredit(FrappeTestCase):
 		original = self._pos_sale(paid=True)
 		ret = self._linked_return(original)
 
-		self.assertLess(frappe.db.get_value("Sales Invoice", ret.name, "outstanding_amount"), 0)
+		# the credit lives on the original: the return carries no due of its own, in the ledger or stored
+		self.assertEqual(frappe.db.get_value("Sales Invoice", ret.name, "outstanding_amount"), 0)
 		self.assertEqual(self._gl_balance(ret.name), 0)
+		self.assertEqual(frappe.db.get_value("Sales Invoice", original.name, "outstanding_amount"), -100)
 		self.assertEqual(self._credit_sources(original.name, ret.name), [(original.name, 100)])
 
 	def test_redeeming_linked_return_credit_settles_every_ledger(self):
