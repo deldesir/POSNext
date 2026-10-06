@@ -71,6 +71,8 @@ def _empty_summary():
 		"sales_count": 0,
 		"collected_total": 0,
 		"outstanding_total": 0,
+		"credit_notes_total": 0,
+		"credit_notes_count": 0,
 	}
 
 
@@ -387,6 +389,13 @@ class TestPOSClosingShift(unittest.TestCase):
 		self.assertEqual(summary["outstanding_total"], 0)
 		self.assertEqual(summary["returns_total"], 100)
 		self.assertEqual(summary["returns_count"], 1)
+		self.assertEqual(summary["credit_notes_total"], 100)
+		self.assertEqual(summary["credit_notes_count"], 1)
+		# the identity the closing screens show: invoiced = collected + outstanding - credit notes
+		self.assertEqual(
+			summary["grand_total"],
+			summary["collected_total"] + summary["outstanding_total"] - summary["credit_notes_total"],
+		)
 		self.assertEqual(payments, [])
 
 	def test_refund_return_reduces_collected(self):

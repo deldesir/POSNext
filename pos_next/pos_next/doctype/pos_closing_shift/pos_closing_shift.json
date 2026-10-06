@@ -33,6 +33,8 @@
   "net_total",
   "collected_amount",
   "outstanding_total",
+  "credit_notes_total",
+  "credit_notes_count",
   "total_quantity",
   "column_break_16",
   "taxes",
@@ -172,6 +174,21 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "description": "Returns refunded to customer credit during the shift: invoiced, neither collected nor outstanding. Grand Total = Collected + Outstanding - Credit Notes.",
+   "fieldname": "credit_notes_total",
+   "fieldtype": "Currency",
+   "label": "Credit Notes",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "credit_notes_count",
+   "fieldtype": "Int",
+   "label": "Credit Notes Count",
+   "read_only": 1
+  },
+  {
    "fieldname": "total_quantity",
    "fieldtype": "Float",
    "label": "Total Quantity",
@@ -240,7 +257,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-06 00:00:00.000000",
+ "modified": "2026-10-06 07:50:31.879282",
  "modified_by": "Administrator",
  "module": "POS Next",
  "name": "POS Closing Shift",
