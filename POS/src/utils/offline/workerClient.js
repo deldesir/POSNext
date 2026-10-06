@@ -1,3 +1,4 @@
+import { SUBPATH } from "../subpath";
 /**
  * Worker Client - Main thread interface to offline worker
  * Provides promise-based API to communicate with offline worker
@@ -46,10 +47,11 @@ class OfflineWorkerClient {
 			this.workerCrashed = false;
 
 			// Create worker using Vite's worker import syntax
-			this.worker = new Worker(
-				new URL("../../workers/offline.worker.js?worker", import.meta.url),
-				{ type: "module" }
-			);
+			// The worker is loaded from the root /assets/... path whatever the site's mount, so the
+			// sub-path it must spell for its requests travels in the URL fragment (see the worker).
+			const workerUrl = new URL("../../workers/offline.worker.js?worker", import.meta.url);
+			workerUrl.hash = "subpath=" + encodeURIComponent(SUBPATH);
+			this.worker = new Worker(workerUrl, { type: "module" });
 
 			// Handle messages from worker
 			this.worker.onmessage = (event) => {
