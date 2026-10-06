@@ -558,23 +558,13 @@ def _process_invoice(
 	base_grand_total = get_base_value(invoice, "grand_total", "base_grand_total", conversion_rate)
 	base_net_total = get_base_value(invoice, "net_total", "base_net_total", conversion_rate)
 
-	# Credit returns with no payment rows were added to customer credit —
-	# no money entered or left the drawer.  Skip entirely.
-	if is_return and not invoice.payments:
-		return frappe._dict(
-			{
-				invoice_field: invoice.name,
-				"posting_date": invoice.posting_date,
-				"grand_total": 0,
-				"transaction_currency": invoice.get("currency") or company_currency,
-				"transaction_amount": flt(invoice.get("grand_total")),
-				"customer": invoice.customer,
-				"is_return": is_return,
-				"return_against": invoice.get("return_against"),
-				"collected_amount": 0,
-				"outstanding_amount": 0,
-			}
-		)
+	# A credit return has no payment rows: the refund went to customer credit,
+	# so no money entered or left the drawer (nothing collected, nothing
+	# outstanding). It is still a credit note the shift invoiced, so it keeps
+	# reducing grand_total / net_total / taxes like any other return - otherwise
+	# the shift's invoiced total disagrees with its own transaction rows and
+	# with the GL by exactly the credit note.
+	credit_return = bool(is_return and not invoice.payments)
 
 	# Money actually collected on this sale, in company currency.  A pure
 	# Pay-on-Account credit sale has paid_amount == 0; a partial sale carries
@@ -591,7 +581,7 @@ def _process_invoice(
 	# keep tying to the GL and to every existing report, while
 	# collected_amount / outstanding_total answer "what is in the drawer".
 	later_payments = 0 if is_return else flt(later_payments)
-	collected = base_grand_total if is_return else base_paid + later_payments
+	collected = 0 if credit_return else (base_grand_total if is_return else base_paid + later_payments)
 	outstanding = 0 if is_return else max(base_grand_total - base_paid - later_payments, 0)
 
 	# Build transaction record

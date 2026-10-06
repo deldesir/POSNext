@@ -361,8 +361,8 @@ class TestPOSClosingShift(unittest.TestCase):
 		self.assertEqual(summary["collected_total"], 50)
 		self.assertEqual(summary["outstanding_total"], 50)
 
-	def test_credit_return_is_unaffected(self):
-		"""Credit returns with no payment rows still contribute nothing and skip early."""
+	def test_credit_return_counts_in_invoiced_totals_only(self):
+		"""A credit return (no payment rows) reduces the invoiced totals but moves no money."""
 		summary = _empty_summary()
 		payments, taxes = [], []
 
@@ -377,13 +377,17 @@ class TestPOSClosingShift(unittest.TestCase):
 
 		txn = _process_invoice(credit_return, "sales_invoice", "USD", "Cash", payments, taxes, summary)
 
-		self.assertEqual(txn["grand_total"], 0)
+		self.assertEqual(txn["grand_total"], -100)
+		self.assertEqual(txn["transaction_amount"], -100)
 		self.assertEqual(txn["collected_amount"], 0)
 		self.assertEqual(txn["outstanding_amount"], 0)
-		self.assertEqual(summary["grand_total"], 0)
+		self.assertEqual(summary["grand_total"], -100)
+		self.assertEqual(summary["net_total"], -100)
 		self.assertEqual(summary["collected_total"], 0)
 		self.assertEqual(summary["outstanding_total"], 0)
-		self.assertEqual(summary["returns_total"], 0)
+		self.assertEqual(summary["returns_total"], 100)
+		self.assertEqual(summary["returns_count"], 1)
+		self.assertEqual(payments, [])
 
 	def test_refund_return_reduces_collected(self):
 		"""A refunded return takes money out of the drawer and out of collected."""
