@@ -205,6 +205,18 @@ export function roundCurrency(value) {
 	return round(value, settings.currency);
 }
 
+/**
+ * What the customer owes on a sale: the exact total, or - when the POS Profile rounds totals
+ * (its "Disable Rounded Total" is off) - the total rounded to the whole currency unit, the way
+ * ERPNext computes rounded_total (same rounding method as the server). The cart, the payment
+ * dialog and the receipt must all read this figure, or whole-gourde cash against an exact total
+ * leaves centimes due.
+ */
+export function roundGrandTotal(value, disableRoundedTotal = true) {
+	const exact = roundCurrency(value);
+	return disableRoundedTotal ? exact : round(exact, 0);
+}
+
 /** Round using system float precision */
 export function roundFloat(value) {
 	return round(value, settings.float);

@@ -663,13 +663,6 @@
 													)
 												"
 											/>
-											<CheckboxField
-												v-model="settings.disable_rounded_total"
-												:label="__('Disable Rounded Total')"
-												:description="
-													__('Show exact totals without rounding')
-												"
-											/>
 										</div>
 									</div>
 
@@ -1194,7 +1187,6 @@ const settings = ref({
 	allow_user_to_edit_additional_discount: 0,
 	allow_user_to_edit_item_discount: 1,
 	allow_user_to_edit_rate: 0,
-	disable_rounded_total: 1,
 	allow_credit_sale: 0,
 	allow_return: 0,
 	allow_write_off_change: 0,
