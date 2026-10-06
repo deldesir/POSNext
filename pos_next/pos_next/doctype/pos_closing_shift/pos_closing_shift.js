@@ -116,12 +116,11 @@ function set_form_data(data, frm) {
 		const conversion_rate = get_conversion_rate(d);
 		const is_return = d.is_return;
 
-		// Credit returns with no payment rows were added to customer credit —
-		// no money entered or left the drawer.  Skip entirely.
-		if (is_return && (!d.payments || d.payments.length === 0)) {
-			add_to_pos_transaction(d, frm, 0);
-			return;
-		}
+		// A credit return has no payment rows: the refund went to customer
+		// credit, so nothing was collected and nothing is outstanding, but the
+		// credit note still reduces what the shift invoiced (mirrors
+		// _process_invoice() in the Python module).
+		const credit_return = is_return && (!d.payments || d.payments.length === 0);
 
 		const base_grand = get_base_value(d, "grand_total", "base_grand_total", conversion_rate);
 		const base_net = get_base_value(d, "net_total", "base_net_total", conversion_rate);
@@ -137,7 +136,7 @@ function set_form_data(data, frm) {
 		);
 		const base_paid =
 			get_base_value(d, "paid_amount", "base_paid_amount", conversion_rate) - base_change;
-		const collected = is_return ? base_grand : base_paid;
+		const collected = credit_return ? 0 : is_return ? base_grand : base_paid;
 		const outstanding = is_return ? 0 : base_grand - base_paid;
 
 		add_to_pos_transaction(d, frm, base_grand);
