@@ -1,3 +1,4 @@
+import { withSubpath } from "./subpath";
 import { call } from "@/utils/apiWrapper";
 import { DEFAULT_CURRENCY, DEFAULT_LOCALE, formatCurrency, formatCurrencyNumber } from "@/utils/currency";
 import { logger } from "@/utils/logger";
@@ -472,16 +473,7 @@ export async function printInvoice(invoiceData, printFormat = null, letterhead =
 		if (lang) params.append("_lang", lang);
 		if (letterheadName) params.append("letterhead", letterheadName);
 
-					// Determine subpath dynamically
-			let subpath = "";
-			if (window.frappe && frappe.router && frappe.router._subpath_prefix) {
-				subpath = frappe.router._subpath_prefix;
-			} else if (window.location.pathname.startsWith("/erp")) {
-				subpath = "/erp";
-			}
-			subpath = subpath.trim().replace(/\/+$/, "");
-
-			const printUrl = `${subpath}/printview?${params.toString()}`;
+			const printUrl = withSubpath(`/printview?${params.toString()}`);
 			const printWindow = window.open(printUrl, "_blank", "width=800,height=600");
 		if (!printWindow) {
 			throw new Error("Popup blocked — check your browser settings.");

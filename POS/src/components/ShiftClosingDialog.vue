@@ -172,6 +172,24 @@
 								</div>
 							</div>
 
+							<!-- Credit notes: returns refunded to customer credit (invoiced, no money moved) -->
+							<div
+								v-if="(closingData.credit_notes_count || 0) > 0"
+								class="text-start bg-orange-50 border border-orange-200 rounded-lg p-3 md:p-4"
+							>
+								<div class="text-orange-600 text-xs uppercase font-medium mb-1">
+									{{ __("Credit Notes") }}
+								</div>
+								<div
+									class="text-lg md:text-2xl font-bold text-orange-900 mb-0.5 md:mb-1 truncate"
+								>
+									-{{ formatCurrency(closingData.credit_notes_total) }}
+								</div>
+								<div class="text-orange-600 text-xs">
+									{{ __("{0} returns to customer credit", [closingData.credit_notes_count]) }}
+								</div>
+							</div>
+
 							<!-- On Account (invoiced but not collected) -->
 							<div
 								v-if="outstandingTotal > 0"

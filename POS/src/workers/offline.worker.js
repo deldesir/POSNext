@@ -1,3 +1,13 @@
+// Site sub-path (e.g. /erp). Vite loads this worker from the root /assets/... path whatever the
+// page's mount, so the page sends the prefix as its first message (SET_SUBPATH) and the first
+// ping waits for it; the script's own path is only the fallback.
+let SUBPATH = ((self.location && self.location.pathname) || "").split("/assets/")[0].replace(/\/+$/, "");
+let resolveSubpath;
+const subpathReady = new Promise((resolve) => {
+	resolveSubpath = resolve;
+	setTimeout(resolve, 500); // an older page that never sends it must not stall the worker
+});
+
 /**
  * @fileoverview Offline Worker - Enterprise-Grade Background Task Processor
  *
@@ -341,7 +351,7 @@ async function pingServer() {
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-		const response = await fetch("/api/method/pos_next.api.ping", {
+		const response = await fetch(SUBPATH + "/api/method/pos_next.api.ping", {
 			method: "GET",
 			signal: controller.signal,
 		});
@@ -1506,7 +1516,7 @@ async function fetchStockFromServer() {
 			headers["X-Frappe-CSRF-Token"] = csrfToken;
 		}
 
-		const response = await fetch("/api/method/pos_next.api.items.get_stock_quantities", {
+		const response = await fetch(SUBPATH + "/api/method/pos_next.api.items.get_stock_quantities", {
 			method: "POST",
 			headers,
 			body: JSON.stringify({
@@ -1695,6 +1705,10 @@ self.onmessage = async (event) => {
 		let result;
 
 		switch (type) {
+			case "SET_SUBPATH":
+				SUBPATH = (payload && payload.subpath) || "";
+				resolveSubpath();
+				break;
 			case "SET_CSRF_TOKEN":
 				csrfToken = payload.token;
 				result = { success: true };
@@ -1912,7 +1926,8 @@ async function initialize() {
 			});
 		}, 30000);
 
-		// Initial ping
+		// Initial ping, once the page has said which sub-path to spell
+		await subpathReady;
 		const isOnline = await pingServer();
 
 		self.postMessage({

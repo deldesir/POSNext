@@ -743,6 +743,7 @@
 </template>
 
 <script setup>
+import { withSubpath } from "@/utils/subpath";
 import { Badge, Button, FormControl, LoadingIndicator, FeatherIcon } from "frappe-ui";
 import SelectInput from "@/components/common/SelectInput.vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
@@ -1011,7 +1012,7 @@ function clearImage() {
 function viewOnDesk() {
 	if (!form.value.item_code) return;
 	const encodedItem = encodeURIComponent(form.value.item_code);
-	window.open(`/app/item/${encodedItem}`, "_blank", "noopener,noreferrer");
+	window.open(withSubpath(`/desk/item/${encodedItem}`), "_blank", "noopener,noreferrer");
 }
 
 function addUomConversion() {
@@ -1170,7 +1171,7 @@ async function uploadImage(itemCode) {
 	formData.append("docname", itemCode);
 	formData.append("fieldname", "image");
 
-	const response = await fetch("/api/method/upload_file", {
+	const response = await fetch(withSubpath("/api/method/upload_file"), {
 		method: "POST",
 		headers: {
 			"X-Frappe-CSRF-Token": window.csrf_token,

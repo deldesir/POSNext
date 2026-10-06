@@ -1,3 +1,4 @@
+import { withSubpath } from "./subpath";
 import { logger } from "@/utils/logger";
 
 import { silentPrintDoc } from "./printInvoice";
@@ -12,14 +13,6 @@ const EOD_PRINT_FORMAT = "POS Next EOD Report";
  * printing is unavailable (e.g. an Android till, or no desktop QZ Tray).
  */
 function browserPrintDoc(doctype, name, printFormat) {
-	let subpath = "";
-	if (window.frappe?.router?._subpath_prefix) {
-		subpath = window.frappe.router._subpath_prefix;
-	} else if (window.location.pathname.startsWith("/erp")) {
-		subpath = "/erp";
-	}
-	subpath = subpath.trim().replace(/\/+$/, "");
-
 	const params = new URLSearchParams({
 		doctype,
 		name,
@@ -31,7 +24,7 @@ function browserPrintDoc(doctype, name, printFormat) {
 	});
 
 	const printWindow = window.open(
-		`${subpath}/printview?${params.toString()}`,
+		withSubpath(`/printview?${params.toString()}`),
 		"_blank",
 		"width=800,height=600",
 	);

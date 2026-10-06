@@ -1,6 +1,8 @@
 const CSRF_COOKIE = "csrf_token";
 const CSRF_PLACEHOLDER = "{{ csrf_token }}";
-const CSRF_TOKEN_ENDPOINT = "/api/method/pos_next.api.utilities.get_csrf_token";
+import { withSubpath } from "./subpath";
+
+const CSRF_TOKEN_ENDPOINT = withSubpath("/api/method/pos_next.api.utilities.get_csrf_token");
 
 let refreshPromise = null;
 let lastKnownToken = null;

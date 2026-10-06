@@ -145,6 +145,10 @@ function set_form_data(data, frm) {
 		frm.doc.total_quantity += flt(d.total_qty);
 		frm.doc.collected_amount += collected;
 		frm.doc.outstanding_total += outstanding;
+		if (credit_return) {
+			frm.doc.credit_notes_total = flt(frm.doc.credit_notes_total) + Math.abs(base_grand);
+			frm.doc.credit_notes_count = (frm.doc.credit_notes_count || 0) + 1;
+		}
 		add_to_payments(d, frm, conversion_rate);
 		add_to_taxes(d, frm, conversion_rate);
 	});
@@ -273,6 +277,8 @@ function reset_values(frm) {
 	frm.set_value("pos_payments", []);
 	frm.set_value("taxes", []);
 	frm.set_value("grand_total", 0);
+	frm.set_value("credit_notes_total", 0);
+	frm.set_value("credit_notes_count", 0);
 	frm.set_value("net_total", 0);
 	frm.set_value("collected_amount", 0);
 	frm.set_value("outstanding_total", 0);

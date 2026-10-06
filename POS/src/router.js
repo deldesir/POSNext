@@ -1,6 +1,7 @@
 import { shiftState } from "@/composables/useShift";
 import { userResource } from "@/data/user";
 import { createRouter, createWebHistory } from "vue-router";
+import { SUBPATH } from "@/utils/subpath";
 import { session } from "./data/session";
 
 const routes = [
@@ -22,7 +23,7 @@ const routes = [
 ];
 
 const router = createRouter({
-	history: createWebHistory("/pos"),
+	history: createWebHistory(SUBPATH + "/pos"),
 	routes,
 });
 

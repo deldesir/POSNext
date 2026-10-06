@@ -613,6 +613,11 @@ def _process_invoice(
 	if is_return:
 		summary["returns_total"] += abs(base_grand_total)
 		summary["returns_count"] += 1
+		if credit_return:
+			# Invoiced, neither collected nor outstanding: the fourth quantity that makes
+			# grand_total = collected + outstanding - credit notes read true.
+			summary["credit_notes_total"] += abs(base_grand_total)
+			summary["credit_notes_count"] += 1
 	else:
 		summary["sales_total"] += base_grand_total
 		summary["sales_count"] += 1
@@ -694,6 +699,8 @@ def make_closing_shift_from_opening(opening_shift):
 		"sales_count": 0,
 		"collected_total": 0,
 		"outstanding_total": 0,
+		"credit_notes_total": 0,
+		"credit_notes_count": 0,
 		"payments_received_total": 0,
 		"payments_received_count": 0,
 	}
@@ -777,6 +784,8 @@ def make_closing_shift_from_opening(opening_shift):
 	closing_shift.total_quantity = summary["total_quantity"]
 	closing_shift.collected_amount = summary["collected_total"]
 	closing_shift.outstanding_total = summary["outstanding_total"]
+	closing_shift.credit_notes_total = summary["credit_notes_total"]
+	closing_shift.credit_notes_count = summary["credit_notes_count"]
 	closing_shift.total_pos_expenses = expenses_total
 
 	# Set child tables (without return info - that's for display only)
@@ -810,6 +819,8 @@ def make_closing_shift_from_opening(opening_shift):
 			"returns_count": summary["returns_count"],
 			"sales_total": summary["sales_total"],
 			"sales_count": summary["sales_count"],
+			"credit_notes_total": summary["credit_notes_total"],
+			"credit_notes_count": summary["credit_notes_count"],
 			"expenses_total": expenses_total,
 			"expenses_count": len(pos_expenses_table),
 			"pos_expenses": pos_expenses_table,
