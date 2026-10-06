@@ -231,15 +231,6 @@ class POSClosingShift(Document):
 					currency,
 					payment.amount,
 				)
-			# change handed back never stayed in the drawer: net it off the cash mode once
-			if flt(invoice_doc.get("change_amount")):
-				update_payment_breakdown(
-					cash_mode_of_payment,
-					-get_base_value(invoice_doc, "change_amount", "base_change_amount", conversion_rate),
-					currency,
-					-flt(invoice_doc.get("change_amount")),
-				)
-
 			change_amount = invoice_doc.get("change_amount") or 0
 			if change_amount:
 				update_payment_breakdown(
