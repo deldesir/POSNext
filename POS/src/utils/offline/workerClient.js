@@ -47,11 +47,13 @@ class OfflineWorkerClient {
 			this.workerCrashed = false;
 
 			// Create worker using Vite's worker import syntax
-			// The worker is loaded from the root /assets/... path whatever the site's mount, so the
-			// sub-path it must spell for its requests travels in the URL fragment (see the worker).
-			const workerUrl = new URL("../../workers/offline.worker.js?worker", import.meta.url);
-			workerUrl.hash = "subpath=" + encodeURIComponent(SUBPATH);
-			this.worker = new Worker(workerUrl, { type: "module" });
+			// Vite bundles the worker only from this exact `new Worker(new URL(...))` form, and
+			// serves it from the root /assets/... path whatever the site's mount, so the sub-path
+			// the worker must spell for its requests travels in the worker's name (see the worker).
+			this.worker = new Worker(
+				new URL("../../workers/offline.worker.js?worker", import.meta.url),
+				{ type: "module", name: "subpath=" + encodeURIComponent(SUBPATH) }
+			);
 
 			// Handle messages from worker
 			this.worker.onmessage = (event) => {

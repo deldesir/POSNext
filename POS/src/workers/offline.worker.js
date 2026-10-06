@@ -1,11 +1,10 @@
 // Site sub-path (e.g. /erp). Vite loads this worker from the root /assets/... path whatever the
-// page's mount, so the page passes the prefix in the worker URL's fragment (#subpath=/erp); the
+// page's mount, so the page passes the prefix in the worker's name ("subpath=/erp"); the
 // script's own path is only the fallback.
 const SUBPATH = (() => {
-	const loc = self.location || {};
-	const m = /(?:^#|&)subpath=([^&]*)/.exec(loc.hash || "");
+	const m = /(?:^|&)subpath=([^&]*)/.exec(self.name || "");
 	if (m) return decodeURIComponent(m[1]).replace(/\/+$/, "");
-	return (loc.pathname || "").split("/assets/")[0].replace(/\/+$/, "");
+	return ((self.location && self.location.pathname) || "").split("/assets/")[0].replace(/\/+$/, "");
 })();
 
 /**
