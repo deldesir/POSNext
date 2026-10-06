@@ -1,3 +1,4 @@
+import { withSubpath } from "./subpath";
 /**
  * Registry for offer discount strategies contributed by optional apps.
  *
@@ -123,7 +124,7 @@ export async function loadOfferStrategyPlugins() {
 		const { isPromotionsAppInstalled } = await import("@/utils/promoApi");
 		if (!isPromotionsAppInstalled()) return;
 
-		const url = "/assets/posnext_promotions/pos/offer-strategies.js";
+		const url = withSubpath("/assets/posnext_promotions/pos/offer-strategies.js");
 		try {
 			const plugin = await import(/* @vite-ignore */ url);
 			await plugin.register?.({

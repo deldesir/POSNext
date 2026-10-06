@@ -1,3 +1,4 @@
+import { withSubpath } from "../subpath";
 import { call } from "@/utils/apiWrapper";
 import { logger } from "@/utils/logger";
 import { CoalescingMutex } from "@/utils/mutex";
@@ -46,7 +47,7 @@ export const pingServer = async () => {
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), SYNC_CONFIG.PING_TIMEOUT_MS);
 
-		const response = await fetch("/api/method/pos_next.api.ping", {
+		const response = await fetch(withSubpath("/api/method/pos_next.api.ping"), {
 			method: "GET",
 			signal: controller.signal,
 		});
@@ -1118,7 +1119,7 @@ const uploadExpenseAttachmentBlob = async ({ blob, name, journalEntry, posOpenin
 	formData.append("pos_opening_shift", posOpeningShift);
 	formData.append("pos_profile", posProfile);
 
-	const response = await fetch("/api/method/pos_next.api.expenses.attach_pos_expense_file", {
+	const response = await fetch(withSubpath("/api/method/pos_next.api.expenses.attach_pos_expense_file"), {
 		method: "POST",
 		headers: {
 			"X-Frappe-CSRF-Token": window.csrf_token,

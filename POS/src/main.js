@@ -10,6 +10,7 @@
  */
 
 import { createPinia } from "pinia";
+import { withSubpathRequest } from "@/utils/subpath";
 import { createApp } from "vue";
 
 import App from "./App.vue";
@@ -115,7 +116,9 @@ async function initializeApp() {
 	});
 
 	// Enable automatic CSRF token refresh on 401/403 errors
-	const csrfAwareFrappeRequest = createCSRFAwareRequest(frappeRequest);
+	// Every resource call is spelled under the site sub-path before it leaves the app
+	const subpathAwareFrappeRequest = (options, ...rest) => frappeRequest(withSubpathRequest(options), ...rest);
+	const csrfAwareFrappeRequest = createCSRFAwareRequest(subpathAwareFrappeRequest);
 	setConfig("resourceFetcher", csrfAwareFrappeRequest);
 
 	// Register plugins

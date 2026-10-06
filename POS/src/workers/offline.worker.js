@@ -1,3 +1,7 @@
+// Site sub-path (e.g. /erp): the worker script is served from <prefix>/assets/..., so the
+// prefix is what comes before /assets/ in its own URL.
+const SUBPATH = ((self.location && self.location.pathname) || "").split("/assets/")[0].replace(/\/+$/, "");
+
 /**
  * @fileoverview Offline Worker - Enterprise-Grade Background Task Processor
  *
@@ -341,7 +345,7 @@ async function pingServer() {
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-		const response = await fetch("/api/method/pos_next.api.ping", {
+		const response = await fetch(SUBPATH + "/api/method/pos_next.api.ping", {
 			method: "GET",
 			signal: controller.signal,
 		});
@@ -1506,7 +1510,7 @@ async function fetchStockFromServer() {
 			headers["X-Frappe-CSRF-Token"] = csrfToken;
 		}
 
-		const response = await fetch("/api/method/pos_next.api.items.get_stock_quantities", {
+		const response = await fetch(SUBPATH + "/api/method/pos_next.api.items.get_stock_quantities", {
 			method: "POST",
 			headers,
 			body: JSON.stringify({

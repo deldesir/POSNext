@@ -512,6 +512,7 @@
 </template>
 
 <script setup>
+import { withSubpath } from "@/utils/subpath";
 import AutocompleteSelect from "@/components/common/AutocompleteSelect.vue"
 import { useOfflineStatus } from "@/composables/useOfflineStatus"
 import { useToast } from "@/composables/useToast"
@@ -1183,7 +1184,7 @@ async function uploadExpenseAttachments(journalEntry, files) {
 		formData.append("pos_profile", props.posProfile)
 
 		const response = await fetch(
-			"/api/method/pos_next.api.expenses.attach_pos_expense_file",
+			withSubpath("/api/method/pos_next.api.expenses.attach_pos_expense_file"),
 			{
 				method: "POST",
 				headers: {

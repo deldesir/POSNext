@@ -237,6 +237,7 @@
 </template>
 
 <script setup>
+import { withSubpath } from "@/utils/subpath";
 import { useToast } from "@/composables/useToast"
 import { DEFAULT_CURRENCY, DEFAULT_LOCALE, formatCurrency as formatCurrencyUtil } from "@/utils/currency"
 import { Button, Dialog, Input, createResource } from "frappe-ui"
@@ -406,9 +407,9 @@ function exportToCSV() {
 // (if it existed) with openShiftDoc() that lets the user pick explicitly.
 function openShiftDoc(shift, type) {
 	if (type === 'closing' && shift.closing_shift_name) {
-		window.open(`/app/pos-closing-shift/${shift.closing_shift_name}`, '_blank')
+		window.open(withSubpath(`/desk/pos-closing-shift/${shift.closing_shift_name}`), '_blank')
 	} else {
-		window.open(`/app/pos-opening-shift/${shift.opening_shift_name}`, '_blank')
+		window.open(withSubpath(`/desk/pos-opening-shift/${shift.opening_shift_name}`), '_blank')
 	}
 }
 

@@ -1,3 +1,4 @@
+import { withSubpath } from "../subpath";
 /**
  * Enterprise-Grade Offline State Manager
  *
@@ -24,7 +25,7 @@ const log = logger.create("OfflineState");
 
 const CONFIG = {
 	// Ping settings
-	PING_URL: "/api/method/pos_next.api.ping",
+	PING_URL: withSubpath("/api/method/pos_next.api.ping"),
 	PING_TIMEOUT_MS: 5000,
 	PING_RETRY_COUNT: 2,
 
