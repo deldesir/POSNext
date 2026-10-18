@@ -502,11 +502,9 @@ def create_payment_entry(
 
 		if reference_no:
 			pe.reference_no = str(reference_no)[:140]
-		elif pos_opening_shift:
-			# Tag with the opening shift name so POS shift closing can find
-			# this payment entry during reconciliation.
-			pe.reference_no = str(pos_opening_shift)[:140]
 		else:
+			# The shift link lives in SHIFT_FIELD (set below); the reference stays
+			# the invoice so printed receipts keep showing it.
 			pe.reference_no = f"POS-{invoice_name}"
 
 		if remarks:
