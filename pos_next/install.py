@@ -26,9 +26,6 @@ def after_install():
 
 		# Setup default print format for POS Profiles
 		setup_default_print_format()
-		# The cashier fixture was synced just before this hook and displaced ERPNext's
-		# standard grants on its DocTypes; put them back beside the cashier rows.
-		restore_standard_grants()
 
 		# Clear cache to ensure changes take effect
 		frappe.clear_cache()
@@ -66,6 +63,14 @@ def after_migrate():
 		frappe.log_error(title="POS Next Migration Error", message=frappe.get_traceback())
 		log_message(f"POS Next: Migration error - {str(e)}", level="error")
 		raise
+
+
+def after_sync():
+	"""Runs once the fixtures are synced on a fresh install. install_app syncs fixtures AFTER the
+	after_install hook, so this is the first moment the cashier fixture has displaced ERPNext's
+	standard grants on its DocTypes; put them back beside the cashier rows."""
+	restore_standard_grants()
+	frappe.clear_cache()
 
 
 def restore_standard_grants(quiet=False):
