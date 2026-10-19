@@ -26,6 +26,9 @@ def after_install():
 
 		# Setup default print format for POS Profiles
 		setup_default_print_format()
+		# The cashier fixture was synced just before this hook and displaced ERPNext's
+		# standard grants on its DocTypes; put them back beside the cashier rows.
+		restore_standard_grants()
 
 		# Clear cache to ensure changes take effect
 		frappe.clear_cache()
@@ -50,6 +53,8 @@ def after_migrate():
 
 		# Setup default print format
 		setup_default_print_format(quiet=True)
+		# Standard grants the cashier fixture displaced (fixtures sync on every migrate)
+		restore_standard_grants(quiet=True)
 
 		# Clear cache
 		frappe.clear_cache()
@@ -61,6 +66,19 @@ def after_migrate():
 		frappe.log_error(title="POS Next Migration Error", message=frappe.get_traceback())
 		log_message(f"POS Next: Migration error - {str(e)}", level="error")
 		raise
+
+
+def restore_standard_grants(quiet=False):
+	"""Re-insert ERPNext's standard permission rows beside the cashier rows (see permissions.py)."""
+	from pos_next.permissions import ensure_standard_grants
+
+	restored = ensure_standard_grants()
+	if restored and not quiet:
+		log_message(
+			f"POS Next: restored standard permission grants on {', '.join(f'{k} ({v})' for k, v in restored.items())}",
+			level="info",
+		)
+	return restored
 
 
 def setup_default_print_format(quiet=False):
