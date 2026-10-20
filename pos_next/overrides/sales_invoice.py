@@ -77,10 +77,12 @@ def _resolve_pos_customer(invoice_doc):
 
 
 try:
-	# ERPNext 16 moved the POS checks off the document into a service: `on_submit` calls
-	# `POSService(self).validate_pos_paid_amount()`, so the method of the same name on the
-	# class below is never reached there. The service is wrapped once, at import, to apply
-	# the same rule; on older ERPNext the import fails and the method override does the job.
+	# ERPNext's develop branch (the POS service refactor of May 2026, which the fleet's
+	# fork follows) moved the POS checks off the document into a service: `on_submit`
+	# calls `POSService(self).validate_pos_paid_amount()`, so the method of the same name
+	# on the class below is never reached there. The service is wrapped once, at import,
+	# to apply the same rule; where the service does not exist the import fails and the
+	# method override does the job.
 	from erpnext.accounts.doctype.sales_invoice.services.pos import POSService
 except ImportError:  # ERPNext before the POS service refactor
 	POSService = None
@@ -287,7 +289,7 @@ class CustomSalesInvoice(SalesInvoice):
 				)
 
 	def validate_pos_paid_amount(self):
-		"""ERPNext before 16 keeps this check on the document; see `payment_rows_optional`."""
+		"""ERPNext without the POS service keeps this check on the document; see `payment_rows_optional`."""
 		if payment_rows_optional(self):
 			return
 		parent = getattr(super(), "validate_pos_paid_amount", None)
