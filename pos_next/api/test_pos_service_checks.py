@@ -1,4 +1,4 @@
-"""Checks that ERPNext 16 moved off the Sales Invoice document and POS Next must still win.
+"""Checks ERPNext's POS service refactor moved off the Sales Invoice document; POS Next must still win.
 
 * a sale on account (no payment row) submits when `submit_invoice` vouched for it, and is
   refused when nothing did;
@@ -45,8 +45,8 @@ class TestPaymentRowsOptional(unittest.TestCase):
 		not_pos = _Doc(is_pos=0, grand_total=120.0, payments=[], flags={"pos_next_credit_sale": 1})
 		self.assertFalse(overrides.payment_rows_optional(not_pos))
 
-	@unittest.skipIf(overrides.POSService is None, "ERPNext before the POS service refactor")
-	def test_erpnext_16_pos_service_honours_the_flag(self):
+	@unittest.skipIf(overrides.POSService is None, "ERPNext without the POS service")
+	def test_the_pos_service_honours_the_flag(self):
 		service = overrides.POSService(_credit_sale(pos_next_credit_sale=1))
 		service.validate_pos_paid_amount()  # must not raise
 		with self.assertRaises(frappe.ValidationError):
