@@ -297,6 +297,8 @@ pos_next_bootstrap_settings = []
 pos_next_customer_validators = []
 pos_next_customer_prepare = []
 pos_next_customer_after_insert = []
+# Add display fields (`note`) to customer search results: fn(customers: list[dict], pos_profile)
+pos_next_customer_annotate = []
 
 
 website_route_rules = [

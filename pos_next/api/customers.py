@@ -68,6 +68,9 @@ def get_customers(search_term="", pos_profile=None, limit=20, modified_since=Non
 			limit=customer_limit,
 			order_by="customer_name asc",
 		)
+		from pos_next.integrations.registry import annotate_customers
+
+		annotate_customers(result, pos_profile)
 		frappe.logger().debug(f"get_customers returned {len(result)} customers")
 		return result
 	except Exception as e:

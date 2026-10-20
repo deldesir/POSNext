@@ -37,6 +37,8 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 				mobile: (customer.mobile_no || "").toLowerCase(),
 				email: (customer.email_id || "").toLowerCase(),
 				id: (customer.name || "").toLowerCase(),
+				// A server-side label such as a hotel room ("Room 301"), searchable too
+				note: (customer.note || "").toLowerCase(),
 				// Pre-compute word starts for super fast word matching
 				nameWords: (customer.customer_name || "").toLowerCase().split(" "),
 			};
@@ -67,6 +69,9 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 		// ID checks
 		if (cached.id.startsWith(term)) return 135;
 		if (cached.id.includes(term)) return 90;
+
+		// Note checks (a room number finds the guest in it)
+		if (cached.note && cached.note.includes(term)) return 160;
 
 		return 0; // No match
 	}
@@ -326,6 +331,7 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 				mobile_no,
 				email_id,
 				disabled: !!disabled,
+				note: data.note || "",
 			};
 			await addCustomerToCache(customer);
 		}

@@ -1613,6 +1613,9 @@ def submit_invoice(invoice=None, data=None):
 
 	# Track whether invoice was successfully submitted
 	invoice_submitted = False
+	# The draft the client made in its own request (step 1), if any: a refusal here must
+	# not leave it in the till's draft list.
+	draft_from_client = None
 
 	try:
 		invoice_name = invoice.get("name")
@@ -1628,6 +1631,8 @@ def submit_invoice(invoice=None, data=None):
 			invoice_doc = frappe.get_doc(doctype, invoice_name)
 		else:
 			invoice_doc = frappe.get_doc(doctype, invoice_name)
+			if invoice_doc.docstatus == 0:
+				draft_from_client = invoice_doc.name
 			existing_customer = invoice_doc.customer
 			invoice_doc.update(invoice)
 			if not invoice_doc.get("customer") and existing_customer:
@@ -1894,6 +1899,8 @@ def submit_invoice(invoice=None, data=None):
 		return result
 
 	except Exception:
+		if draft_from_client and not invoice_submitted:
+			_discard_failed_draft(draft_from_client)
 		frappe.log_error(frappe.get_traceback(), "Submit Invoice Error")
 		raise
 
@@ -1901,6 +1908,28 @@ def submit_invoice(invoice=None, data=None):
 		# Cleanup sync record if invoice was not successfully submitted
 		if sync_record_name and not invoice_submitted:
 			_cleanup_failed_sync(sync_record_name)
+
+
+def _discard_failed_draft(invoice_name):
+	"""Delete the draft a refused submission was made from.
+
+	The till submits in two requests: `update_invoice` saves the draft and commits, then
+	`submit_invoice` submits it. When the second is refused (stock, a credit rule, an
+	authorization, an app hook such as a hotel's room-charge check) the request rolls
+	back, but the draft from the first request stays, and the cashier's retry makes
+	another: the drafts list fills with dead copies of one sale. The cart is still on
+	the screen, so nothing is lost by removing the draft.
+
+	The failed work is rolled back first so the delete commits on its own; the error that
+	caused all this is re-raised by the caller as before.
+	"""
+	try:
+		frappe.db.rollback()
+		if frappe.db.get_value("Sales Invoice", invoice_name, "docstatus") == 0:
+			frappe.delete_doc("Sales Invoice", invoice_name, force=1, ignore_permissions=True)
+			frappe.db.commit()
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Failed Draft Cleanup")
 
 
 # ==========================================

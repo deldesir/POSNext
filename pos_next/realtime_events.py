@@ -204,6 +204,10 @@ def emit_customer_event(doc, method=None):
 			"action": action,
 			"timestamp": frappe.utils.now(),
 		}
+		# The same display fields the search results carry, so the till's cache stays whole.
+		from pos_next.integrations.registry import annotate_customers
+
+		annotate_customers([event_data])
 
 		frappe.publish_realtime(
 			event="pos_customer_changed",

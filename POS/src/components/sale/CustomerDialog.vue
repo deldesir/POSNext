@@ -161,6 +161,11 @@
 								<div class="flex-1 min-w-0">
 									<div class="font-semibold text-sm text-gray-900 truncate">
 										{{ customer.customer_name }}
+										<span
+											v-if="customer.note"
+											class="ms-2 inline-block align-middle rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800"
+											>{{ customer.note }}</span
+										>
 									</div>
 									<div class="text-xs text-gray-600 mt-1 gap-2">
 										<span v-if="customer.mobile_no"

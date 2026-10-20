@@ -76,6 +76,51 @@ def _resolve_pos_customer(invoice_doc):
 	return None
 
 
+try:
+	# ERPNext 16 moved the POS checks off the document into a service: `on_submit` calls
+	# `POSService(self).validate_pos_paid_amount()`, so the method of the same name on the
+	# class below is never reached there. The service is wrapped once, at import, to apply
+	# the same rule; on older ERPNext the import fails and the method override does the job.
+	from erpnext.accounts.doctype.sales_invoice.services.pos import POSService
+except ImportError:  # ERPNext before the POS service refactor
+	POSService = None
+
+
+def payment_rows_optional(doc) -> bool:
+	"""Whether this POS sale may submit without a payment row.
+
+	Two cases, both vouched for by `submit_invoice` through a transient flag after it has
+	checked the POS Settings, so a tampered client cannot bypass the core requirement:
+
+	1. Pure customer-credit redemption: POS Next redeems existing customer credit after
+	   submit through Journal Entries / Payment Entry allocation, so there is no real
+	   Mode of Payment row to send.
+	2. "Pay on Account" credit sales: the cashier intentionally puts the full amount on
+	   the customer's account, leaving the invoice outstanding.
+	"""
+	flags = getattr(doc, "flags", None) or {}
+	if not (flags.get("pos_next_redeemed_customer_credit") or flags.get("pos_next_credit_sale")):
+		return False
+	return len(doc.get("payments") or []) == 0 and cint(doc.get("is_pos")) and flt(doc.get("grand_total")) > 0
+
+
+def _wrap_pos_service():
+	if POSService is None or getattr(POSService.validate_pos_paid_amount, "_pos_next_wrapped", False):
+		return
+	erpnext_check = POSService.validate_pos_paid_amount
+
+	def validate_pos_paid_amount(self):
+		if payment_rows_optional(self.doc):
+			return
+		return erpnext_check(self)
+
+	validate_pos_paid_amount._pos_next_wrapped = True
+	POSService.validate_pos_paid_amount = validate_pos_paid_amount
+
+
+_wrap_pos_service()
+
+
 class CustomSalesInvoice(SalesInvoice):
 	"""
 	Custom Sales Invoice class that handles wallet payments correctly.
@@ -242,26 +287,12 @@ class CustomSalesInvoice(SalesInvoice):
 				)
 
 	def validate_pos_paid_amount(self):
-		"""
-		Allow POS sales to submit without a payment row in two cases:
-
-		1. Pure customer-credit redemption — POSNext redeems existing customer
-		   credit after submit through Journal Entries / Payment Entry allocation,
-		   so there is no real Mode of Payment row to send.
-		2. "Pay on Account" credit sales — the cashier intentionally puts the full
-		   amount on the customer's account, leaving the invoice outstanding.
-
-		Both are only honoured when submit_invoice has explicitly marked the
-		document via the corresponding flag (set after verifying the POS Settings
-		permit the operation), so a tampered client can't bypass the check.
-		"""
-		if getattr(self.flags, "pos_next_redeemed_customer_credit", 0) or getattr(
-			self.flags, "pos_next_credit_sale", 0
-		):
-			if len(self.payments) == 0 and cint(self.is_pos) and flt(self.grand_total) > 0:
-				return
-
-		super().validate_pos_paid_amount()
+		"""ERPNext before 16 keeps this check on the document; see `payment_rows_optional`."""
+		if payment_rows_optional(self):
+			return
+		parent = getattr(super(), "validate_pos_paid_amount", None)
+		if parent:
+			parent()
 
 	def get_party_and_party_type_for_pos_gl_entry(self, mode_of_payment, account):
 		"""
