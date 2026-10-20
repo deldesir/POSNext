@@ -98,6 +98,11 @@
 										class="text-xs font-semibold text-gray-900 truncate leading-tight"
 									>
 										{{ customer.customer_name || customer.name }}
+										<span
+											v-if="customer.note"
+											class="ms-1 inline-block align-middle rounded bg-emerald-100 px-1 py-0.5 text-[9px] font-medium text-emerald-800"
+											>{{ customer.note }}</span
+										>
 									</p>
 									<p
 										v-if="customer.mobile_no"
@@ -424,6 +429,11 @@
 							<div class="flex-1 min-w-0 pointer-events-none">
 								<p class="text-[11px] font-semibold text-gray-900 truncate">
 									{{ cust.customer_name }}
+									<span
+										v-if="cust.note"
+										class="ms-1 inline-block align-middle rounded bg-emerald-100 px-1 py-0.5 text-[9px] font-medium text-emerald-800"
+										>{{ cust.note }}</span
+									>
 								</p>
 								<p v-if="cust.mobile_no" class="text-[9px] text-gray-600">
 									{{ cust.mobile_no }}

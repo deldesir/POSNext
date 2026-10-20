@@ -62,6 +62,23 @@ def prepare_customer_doc(customer, **kwargs):
 	return sync_external_customer
 
 
+def annotate_customers(customers, pos_profile=None):
+	"""Let optional apps add display fields to customer search results.
+
+	Each hook receives the list of customer dicts the till will show (and cache) and
+	mutates them in place; `note` is the field the till renders beside the name. Best
+	effort: a failing hook is logged and the search still answers.
+	"""
+	if not customers:
+		return customers
+	for method_path in frappe.get_hooks("pos_next_customer_annotate") or []:
+		try:
+			frappe.get_attr(method_path)(customers, pos_profile)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"Customer annotate hook failed: {method_path}")
+	return customers
+
+
 def after_customer_insert(customer, **kwargs):
 	# Best-effort: customer.insert() already succeeded; do not roll it back.
 	for method_path in frappe.get_hooks("pos_next_customer_after_insert") or []:
