@@ -1088,6 +1088,7 @@ let _posInitPromise = null;
 
 <script setup>
 import ShiftClosingDialog from "@/components/ShiftClosingDialog.vue";
+import { withSubpath } from "@/utils/subpath";
 import { resolveLocalUomPrice } from "@/utils/uomPrice";
 import ShiftOpeningDialog from "@/components/ShiftOpeningDialog.vue";
 import ClearCacheOverlay from "@/components/common/ClearCacheOverlay.vue";
@@ -2626,7 +2627,7 @@ function switchToDesk() {
 		return;
 	}
 
-	window.location.assign("/app");
+	window.location.assign(withSubpath("/app"));
 }
 
 function formatCurrency(amount) {
