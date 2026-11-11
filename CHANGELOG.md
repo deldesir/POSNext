@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **"Allow Negative Stock" in POS Settings is the till's opt-in, no longer a company switch**
+  - Saving a POS profile's settings no longer turns the company-wide "Allow Negative Stock" in Stock Settings on or off; that permission stays a Stock Manager decision made in Stock Settings, with its own author and change log
+  - With Stock Settings off every till blocks sales past available stock; with it on, only the tills that opted in sell past zero (the others keep the POS Profile's "Block Sale Beyond Available Qty")
+  - The settings dialog says when the company permission is off, and the server sends the till the current company value (`_global_allow_negative_stock`) on bootstrap, load and save
+
 ## [1.16.0] - 2026-04-01
 
 ### Added

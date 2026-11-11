@@ -725,29 +725,29 @@ def _get_item_negative_stock_allow_set(items):
 
 
 def _should_block(pos_profile):
-	"""Check if sale should be blocked for insufficient stock."""
-	# First check global ERPNext Stock Settings
-	allow_negative = cint(frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0)
-	if allow_negative:
+	"""Decide whether a sale past available stock is refused.
+
+	Whether the company may hold negative stock is decided in Stock Settings, a
+	Stock Manager setting. A POS profile's own "Allow Negative Stock" is only the
+	till's opt-in to that permission: it never grants it. So with Stock Settings
+	off every till blocks, and with it on only the tills that opted in sell past
+	zero; the others keep the POS Profile's legacy "Block Sale Beyond Available
+	Qty" flag, which blocks unless explicitly cleared.
+	"""
+	if not cint(frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0):
+		return True
+
+	if not pos_profile:
+		return True
+
+	till_opted_in = frappe.db.get_value(
+		"POS Settings", {"pos_profile": pos_profile, "enabled": 1}, "allow_negative_stock"
+	)
+	if cint(till_opted_in or 0):
 		return False
 
-	# Check POS Settings for the specific profile
-	if pos_profile:
-		# Check if POS Settings allows negative stock
-		pos_settings_allow_negative = cint(
-			frappe.db.get_value("POS Settings", {"pos_profile": pos_profile}, "allow_negative_stock") or 0
-		)
-		if pos_settings_allow_negative:
-			return False
-
-		# Try to get custom field (may not exist in vanilla ERPNext)
-		block_sale = cint(
-			frappe.db.get_value("POS Profile", pos_profile, "posa_block_sale_beyond_available_qty") or 1
-		)
-		return bool(block_sale)
-
-	# Default to blocking if no profile specified
-	return True
+	block_sale = frappe.db.get_value("POS Profile", pos_profile, "posa_block_sale_beyond_available_qty")
+	return block_sale is None or bool(cint(block_sale))
 
 
 def _validate_stock_on_invoice(invoice_doc):

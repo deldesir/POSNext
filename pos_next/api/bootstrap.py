@@ -31,6 +31,7 @@ from frappe.query_builder.functions import Coalesce
 from frappe.utils import get_system_timezone
 
 from pos_next.api.constants import DEFAULT_POS_SETTINGS, POS_SETTINGS_FIELDS, merge_pos_settings
+from pos_next.pos_next.doctype.pos_settings.pos_settings import with_global_negative_stock_flag
 
 
 @frappe.whitelist()
@@ -249,6 +250,7 @@ def _get_pos_settings(pos_profile_doc):
 			as_dict=True,
 		)
 		settings = merge_pos_settings(row)
+		with_global_negative_stock_flag(settings)
 
 		# Derive from POS Profile (single source of truth)
 		settings["allow_write_off_change"] = (

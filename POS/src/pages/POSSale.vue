@@ -1465,11 +1465,17 @@ onMounted(async () => {
 		log.info("Event: Stock policy changed", changes);
 
 		if (changes.allow_negative_stock) {
-			const isNowAllowed = changes.allow_negative_stock.new;
+			const optedIn = changes.allow_negative_stock.new;
+			const companyAllows = posSettingsStore.settings?._global_allow_negative_stock;
 
-			const message = isNowAllowed
-				? __("Negative stock sales are now allowed")
-				: __("Negative stock sales are now restricted");
+			let message = __("Negative stock sales are now restricted");
+			if (optedIn && companyAllows) {
+				message = __("Negative stock sales are now allowed");
+			} else if (optedIn) {
+				message = __(
+					"This till will sell past available stock once Stock Settings allows negative stock for the company"
+				);
+			}
 
 			showSuccess(message);
 		}
