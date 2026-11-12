@@ -7,6 +7,13 @@ from frappe.utils import cint, flt
 
 
 class POSSettings(Document):
+	"""Per-profile till settings.
+
+	`allow_negative_stock` here is the till's opt-in to the company's permission in
+	Stock Settings; it never writes that permission. Whether the company may hold
+	negative stock stays a Stock Manager decision made in Stock Settings.
+	"""
+
 	def validate(self):
 		"""Validate POS Settings"""
 		# Guard against None values and validate discount percentage
@@ -33,65 +40,15 @@ class POSSettings(Document):
 					"Please disable Partial Payment first."
 				)
 
-	def on_update(self):
-		"""Sync allow_negative_stock with Stock Settings"""
-		self.sync_negative_stock_setting()
-
-	def sync_negative_stock_setting(self):
-		"""
-		Synchronize allow_negative_stock with Stock Settings.
-
-		When enabled in POS Settings, it enables the global Stock Settings.
-		When disabled, it only disables global Stock Settings if no other
-		POS Settings have it enabled.
-
-		Note: Runs in the same transaction as the save, no manual commits.
-		"""
-		current_stock_setting = cint(
-			frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
-		)
-
-		if cint(self.allow_negative_stock):
-			# Enable Stock Settings if not already enabled
-			if not current_stock_setting:
-				frappe.db.set_single_value("Stock Settings", "allow_negative_stock", 1, update_modified=False)
-				frappe.msgprint(
-					"Stock Settings 'Allow Negative Stock' has been automatically enabled.",
-					indicator="green",
-					alert=True,
-				)
-		else:
-			# Only disable if no other enabled POS Settings have it enabled
-			if current_stock_setting:
-				# Use count for better performance and clarity
-				other_enabled_count = frappe.db.count(
-					"POS Settings",
-					{
-						"allow_negative_stock": 1,
-						"enabled": 1,  # Only check enabled POS Settings
-						"name": ["!=", self.name],
-					},
-				)
-
-				if other_enabled_count == 0:
-					frappe.db.set_single_value(
-						"Stock Settings", "allow_negative_stock", 0, update_modified=False
-					)
-					frappe.msgprint(
-						"Stock Settings 'Allow Negative Stock' has been automatically disabled.",
-						indicator="orange",
-						alert=True,
-					)
-
 
 @frappe.whitelist()
 def get_pos_settings(pos_profile):
 	"""
 	Get POS Settings for a specific POS Profile.
 
-	Also injects the current global Stock Settings value to show the actual
-	source of truth, preventing confusion when the checkbox appears enabled
-	but the global setting was changed elsewhere.
+	Also carries the company-wide Stock Settings value as
+	`_global_allow_negative_stock`, so the till knows whether its own
+	`allow_negative_stock` opt-in is in force.
 	"""
 	from frappe import _
 
@@ -115,16 +72,23 @@ def get_pos_settings(pos_profile):
 	# Runtime flags (miraaya_installed, magento_loyalty_available) are not columns
 	settings = merge_pos_settings(row)
 
-	# Inject the current global Stock Settings value for transparency
-	# This helps UI reflect the actual state even if multiple POS Settings exist
-	settings["_global_allow_negative_stock"] = cint(
-		frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
-	)
+	with_global_negative_stock_flag(settings)
 
 	from pos_next.integrations.registry import extend_bootstrap_settings
 
 	extend_bootstrap_settings(settings, pos_profile)
 
+	return settings
+
+
+def with_global_negative_stock_flag(settings):
+	"""Add the company-wide negative-stock permission the till's opt-in depends on.
+
+	Read-only for the till: the value is owned by Stock Settings.
+	"""
+	settings["_global_allow_negative_stock"] = cint(
+		frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
+	)
 	return settings
 
 
@@ -167,4 +131,4 @@ def update_pos_settings(pos_profile, settings):
 		doc.update(settings)
 		doc.insert()
 
-	return doc.as_dict()
+	return with_global_negative_stock_flag(doc.as_dict())

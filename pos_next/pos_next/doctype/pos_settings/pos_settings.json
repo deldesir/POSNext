@@ -524,7 +524,7 @@
   },
   {
    "default": "0",
-   "description": "Enable selling items even when stock reaches zero or below. Integrates with ERPNext negative stock settings.",
+   "description": "Let this till sell past available stock when the company allows negative stock in Stock Settings. This never changes the company setting.",
    "fieldname": "allow_negative_stock",
    "fieldtype": "Check",
    "label": "Allow Negative Stock"
@@ -602,7 +602,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-06 06:37:59.462050",
+ "modified": "2026-11-11 21:14:58.887957",
  "modified_by": "Administrator",
  "module": "POS Next",
  "name": "POS Settings",

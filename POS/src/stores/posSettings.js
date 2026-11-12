@@ -66,6 +66,8 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		// Miscellaneous
 		input_qty: 0,
 		allow_negative_stock: 0,
+		// Company-wide permission from Stock Settings, sent by the server; read-only here
+		_global_allow_negative_stock: 0,
 		// Sales Persons
 		enable_sales_persons: "Disabled",
 		// Security
@@ -171,7 +173,12 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 
 	// Computed - Miscellaneous
 	const inputQty = computed(() => Boolean(settings.value.input_qty));
-	const allowNegativeStock = computed(() => Boolean(settings.value.allow_negative_stock));
+	// The till's opt-in counts only while the company allows negative stock (Stock Settings)
+	const allowNegativeStock = computed(
+		() =>
+			Boolean(settings.value.allow_negative_stock) &&
+			Boolean(settings.value._global_allow_negative_stock)
+	);
 
 	// Computed - Sales Persons
 	const enableSalesPersons = computed(() => settings.value.enable_sales_persons !== "Disabled");
@@ -288,6 +295,8 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 			allow_change_posting_date: 0,
 			input_qty: 0,
 			allow_negative_stock: 0,
+			// Company-wide permission from Stock Settings, sent by the server; read-only here
+			_global_allow_negative_stock: 0,
 			enable_sales_persons: "Disabled",
 			// Security
 			enable_session_lock: 0,
@@ -314,7 +323,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	 * @returns {boolean} - True if negative stock is allowed
 	 */
 	function isNegativeStockAllowed() {
-		return isEnabled.value && Boolean(settings.value.allow_negative_stock);
+		return isEnabled.value && allowNegativeStock.value;
 	}
 
 	/**
@@ -322,7 +331,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	 * @returns {boolean} - True if stock validation should prevent negative stock
 	 */
 	function shouldEnforceStockValidation() {
-		return isEnabled.value && !Boolean(settings.value.allow_negative_stock);
+		return isEnabled.value && !allowNegativeStock.value;
 	}
 
 	/**

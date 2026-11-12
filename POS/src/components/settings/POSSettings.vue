@@ -310,10 +310,25 @@
 												:label="__('Allow Negative Stock')"
 												:description="
 													__(
-														'Enable selling items even when stock reaches zero or below. Integrates with Back Office stock settings.'
+														'Let this till sell past available stock when the company allows negative stock in Stock Settings. This never changes the company setting.'
 													)
 												"
 											/>
+											<div
+												v-if="
+													settings.allow_negative_stock &&
+													!settings._global_allow_negative_stock
+												"
+												class="mt-3 p-3 bg-amber-100 rounded-md"
+											>
+												<p class="text-xs text-amber-800 leading-relaxed">
+													{{
+														__(
+															"Stock Settings does not allow negative stock for the company, so this till still blocks sales past available stock. A Stock Manager can change that in Stock Settings."
+														)
+													}}
+												</p>
+											</div>
 											<div class="mt-3 p-3 bg-blue-100 rounded-md">
 												<div class="flex items-start gap-2">
 													<svg
@@ -334,7 +349,7 @@
 														class="text-xs text-blue-800 leading-relaxed"
 														:inner="
 															__(
-																'&lt;strong&gt;Note:&lt;strong&gt; When enabled, the system will allow sales even when stock quantity is zero or negative. This is useful for handling stock sync delays or backorders. All transactions are tracked in the stock ledger.'
+																'&lt;strong&gt;Note:&lt;/strong&gt; With this on, the till lets a sale go past the quantity on hand instead of refusing it, which covers stock sync delays or backorders. It applies only while Stock Settings allows negative stock for the company, and every sale is still written to the stock ledger.'
 															)
 														"
 													/>

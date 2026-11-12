@@ -112,6 +112,13 @@ jobs:
         env:
           TYPE: server
 
+      - name: Run Stock Validation Tests
+        working-directory: /home/runner/frappe-bench
+        run: |
+          bench --site test_site run-tests --module pos_next.api.test_invoices_stock
+        env:
+          TYPE: server
+
       - name: Run Sales Person Commission Tests
         working-directory: /home/runner/frappe-bench
         run: |
